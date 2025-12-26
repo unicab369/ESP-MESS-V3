@@ -1,0 +1,17 @@
+menu "Application Configuration"
+    config BLINK_GPIO
+        int "Blink GPIO"
+        default 5
+
+    config SPI_MOSI
+        int "SPI MOSI GPIO"
+        default 23
+
+    config SPI_MISO
+        int "SPI MISO GPIO"
+        default 19
+
+    config SPI_CLK
+        int "SPI CLK GPIO"
+        default 18
+endmenu
