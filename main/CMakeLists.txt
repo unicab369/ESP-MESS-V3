@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS "test_network.c"
+    
     INCLUDE_DIRS "."
+
     PRIV_REQUIRES
         driver
         nvs_flash

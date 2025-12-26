@@ -1,91 +1,21 @@
-// #include <stdio.h>
-// #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
-// #include "driver/gpio.h"
-// #include "esp_log.h"
-// #include "sdkconfig.h"
-
-// #include "mod_spi.h"
-// #include "mod_sd.h"
-// #include "nvs_flash.h"
-// #include "mod_wifi.h"
-
-// #define BLINK_GPIO 22
-
-// static const char *TAG = "ESP-MESS";
-
-
-// void app_main(void) {
-// 	//# nvs_flash required for WiFi, ESP-NOW, and other stuff.
-//     esp_err_t ret = nvs_flash_init();
-//     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-//         ESP_ERROR_CHECK(nvs_flash_erase());
-//         ret = nvs_flash_init();
-//     }
-//     ESP_ERROR_CHECK(ret);
-//     ESP_LOGI(TAG, "APP START");
-
-// 	//# Init SPI1 peripherals
-//     M_Spi_Conf spi_conf0 = {
-//         .host = 1,
-//         .mosi = CONFIG_SPI_MOSI,
-//         .miso = CONFIG_SPI_MISO,
-//         .clk = CONFIG_SPI_CLK,
-//         .cs = -1,
-//     };
-
-//     ret = mod_spi_init(&spi_conf0, 20E6);
-
-//     if (ret == ESP_OK) {
-//         //! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
-//         sd_spi_config(spi_conf0.host, spi_conf0.cs);
-//         sd_test();
-//     }
-
-//     //# Setup Wifi
-//     wifi_init_sta(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
-
-//     // app_wifi_interface_t wifi = {
-//     //     // .on_display_print = display_print_str,
-//     //     .max_retries = 10,
-//     // };
-
-//     // wifi_setup(&wifi);
-//     // wifi_softAp_begin(CONFIG_AP_WIFI_SSID, CONFIG_AP_WIFI_PASSWORD, 1);
-//     // wifi_sta_begin(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
-//     // ESP_ERROR_CHECK(esp_wifi_start());
-
-//     //# Setup Blinking
-//     static uint8_t s_led_state = 0;
-// 	gpio_reset_pin(BLINK_GPIO);
-// 	gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
-
-// 	while (1) {
-// 		ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
-// 		gpio_set_level(BLINK_GPIO, s_led_state);
-//         s_led_state = !s_led_state;
-
-// 		vTaskDelay(1000 / portTICK_PERIOD_MS);
-// 	}
-// }
-
-
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
+
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "WIFI_CRED.h"
 
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
-
+#define BLINK_GPIO 22
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
@@ -93,7 +23,7 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-static const char *TAG = "wifi station";
+static const char *TAG = "[ESP-MESS]";
 
 static int s_retry_num = 0;
 
@@ -203,8 +133,16 @@ void app_main(void) {
 
     wifi_init_sta();
 
+    //# Setup Blinking
+    static uint8_t s_led_state = 0;
+	gpio_reset_pin(BLINK_GPIO);
+	gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+
     while(1) {
         wifi_poll();
+        gpio_set_level(BLINK_GPIO, s_led_state);
+        s_led_state = !s_led_state;
+        
         vTaskDelay(1000 / portTICK_PERIOD_MS); 
     }
 }
