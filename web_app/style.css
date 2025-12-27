@@ -1,0 +1,59 @@
+body {
+	font-family: 'Arial', sans-serif;
+	text-align: center;
+	margin: 0;
+	padding: 20px;
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	min-height: 100vh;
+	color: white;
+}
+.container {
+	background: rgba(255, 255, 255, 0.1);
+	backdrop-filter: blur(10px);
+	border-radius: 20px;
+	padding: 40px;
+	margin: 50px auto;
+	max-width: 800px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+}
+h1 {
+	font-size: 3em;
+	margin-bottom: 10px;
+	text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+p {
+	font-size: 1.2em;
+	line-height: 1.6;
+	margin: 20px 0;
+}
+.info-box {
+	background: rgba(0, 0, 0, 0.2);
+	border-radius: 10px;
+	padding: 20px;
+	margin: 30px 0;
+	text-align: left;
+}
+.chip {
+	display: inline-block;
+	background: rgba(255, 255, 255, 0.2);
+	padding: 8px 16px;
+	border-radius: 50px;
+	margin: 5px;
+	font-weight: bold;
+}
+.ip-address {
+	font-family: monospace;
+	background: rgba(0, 0, 0, 0.3);
+	padding: 10px 20px;
+	border-radius: 10px;
+	display: inline-block;
+	margin-top: 20px;
+	font-size: 1.5em;
+	letter-spacing: 1px;
+}
+.footer {
+	margin-top: 40px;
+	font-size: 0.9em;
+	opacity: 0.8;
+}

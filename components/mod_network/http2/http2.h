@@ -131,6 +131,15 @@ static const char *HTML_PAGE =
 "</body>"
 "</html>";
 
+static esp_err_t options_handler(httpd_req_t *req) {
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+
+    httpd_resp_send(req, NULL, 0);  // 200, empty body
+    return ESP_OK;
+}
+
 // Handler for root URL "/" - serves HTML page
 static esp_err_t root_get_handler(httpd_req_t *req) {
 	ESP_LOGI(TAG_HTTP, "Serving HTML page to client");
@@ -144,33 +153,38 @@ static esp_err_t root_get_handler(httpd_req_t *req) {
 	return ESP_OK;
 }
 
-// Handler for "/info" endpoint - returns system info as JSON
 static esp_err_t info_get_handler(httpd_req_t *req) {
-	ESP_LOGI(TAG_HTTP, "Serving system info");
-	
-	// Get IP address
-	char ip_str[16] = "0.0.0.0";
-	esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-	if (netif) {
-		esp_netif_ip_info_t ip_info;
-		if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-			esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str));
-		}
-	}
-	
-	// Create JSON response
-	char json_response[256];
-	snprintf(json_response, sizeof(json_response),
-			"{\"heap_free\": %lu, \"ip_address\": \"%s\"}",
-			esp_get_free_heap_size(), ip_str);
-	
-	// Set content type to JSON
-	httpd_resp_set_type(req, "application/json");
-	
-	// Send JSON response
-	httpd_resp_send(req, json_response, strlen(json_response));
-	
-	return ESP_OK;
+    // ==== CRITICAL: Add CORS headers FIRST ====
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, OPTIONS");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+    
+    // ==== Handle OPTIONS (CORS preflight) ====
+    if (req->method == HTTP_OPTIONS) {
+        ESP_LOGI(TAG_HTTP, "Sending OPTIONS response for CORS preflight");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+
+    // Get IP address
+    char ip_str[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+            esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str));
+        }
+    }
+
+    // Create JSON response
+    char buf[256];
+    int len = snprintf(buf, sizeof(buf),
+            "{\"heap_free\": %lu, \"ip_address\": \"%s\"}",
+            esp_get_free_heap_size(), ip_str);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, len);
+    return ESP_OK;
 }
 
 // Start HTTP server
@@ -180,7 +194,7 @@ static httpd_handle_t start_webserver(void) {
 	
 	// Configure server
 	config.stack_size = 4096;
-	config.max_uri_handlers = 8;
+	config.max_uri_handlers = 20;
 	
 	ESP_LOGI(TAG_HTTP, "Starting HTTP server on port %d", config.server_port);
 	
@@ -194,16 +208,23 @@ static httpd_handle_t start_webserver(void) {
 			.user_ctx = NULL
 		};
 		httpd_register_uri_handler(server, &root);
-		
-		// Register info handler
-		httpd_uri_t info = {
-			.uri = "/info",
-			.method = HTTP_GET,
-			.handler = info_get_handler,
-			.user_ctx = NULL
+
+		httpd_uri_t options_uri = {
+			.uri      = "/info",
+			.method   = HTTP_OPTIONS,
+			.handler  = options_handler,
+			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &info);
-		
+		httpd_register_uri_handler(server, &options_uri);
+
+		httpd_uri_t info_uri = {
+			.uri      = "/info",
+			.method   = HTTP_GET,
+			.handler  = info_get_handler,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &info_uri);
+
 		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
 	} else {
 		ESP_LOGE(TAG_HTTP, "Failed to start HTTP server!");
