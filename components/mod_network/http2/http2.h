@@ -175,7 +175,7 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
 }
 
 // Start HTTP server
-static httpd_handle_t start_webserver(void) {
+	static httpd_handle_t start_webserver(void) {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 	config.uri_match_fn = httpd_uri_match_wildcard; 
