@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// NAN (Neighbor Awareness Networking)
 // Function prototypesw
 void wifi_nan_publish(void);
 void wifi_nan_subscribe(void);

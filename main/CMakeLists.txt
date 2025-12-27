@@ -10,5 +10,5 @@ idf_component_register(
         esp_wifi
         mod_spi
         mod_sd
-        mod_wifi
+        mod_network
 )
