@@ -1,17 +1,21 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
+
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
+#include "driver/gpio.h"
 
 #include "mod_spi.h"
 #include "mod_sd.h"
-#include "nvs_flash.h"
+
+#include "wifi2/mod_wifi2.h"
+#include "WIFI_CRED.h"
 
 #define BLINK_GPIO 22
+static const char *TAG = "[ESP-MESS]";
 
-static const char *TAG = "ESP-MESS";
 
 void app_main(void) {
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
@@ -23,10 +27,15 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "APP START");
 
+	//# Setup Blinking
+	static uint8_t s_led_state = 0;
 	gpio_reset_pin(BLINK_GPIO);
 	gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
 
-	//# Init SPI1 peripherals
+	//# Setup Wifi
+	wifi_init_sta(EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASSWORD);
+
+    //# Init SPI1 peripherals
     M_Spi_Conf spi_conf0 = {
         .host = 1,
         .mosi = CONFIG_SPI_MOSI,
@@ -43,13 +52,18 @@ void app_main(void) {
         sd_test();
     }
 
-    static uint8_t s_led_state = 0;
+    int counter = 0;
 
 	while (1) {
 		ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
 		gpio_set_level(BLINK_GPIO, s_led_state);
         s_led_state = !s_led_state;
 
+        char output[32];
+        sprintf(output, "%d,3,4,5,6", counter++);
+        sd_write_data(MOUNT_POINT"/test.txt", output);
+        
+        wifi_poll();
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 }

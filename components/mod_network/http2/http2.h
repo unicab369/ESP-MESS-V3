@@ -133,12 +133,12 @@ static const char *HTML_PAGE =
 
 static esp_err_t options_handler(httpd_req_t *req) {
 	ESP_LOGW(TAG_HTTP, "Sending OPTIONS response for CORS preflight");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
 
-    httpd_resp_send(req, NULL, 0);  // 200, empty body
-    return ESP_OK;
+	httpd_resp_send(req, NULL, 0);  // 200, empty body
+	return ESP_OK;
 }
 
 // Handler for root URL "/" - serves HTML page
@@ -152,26 +152,49 @@ static esp_err_t root_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t info_get_handler(httpd_req_t *req) {
-    // Get IP address
-    char ip_str[16] = "0.0.0.0";
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif) {
-        esp_netif_ip_info_t ip_info;
-        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-            esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str));
-        }
-    }
+	// Get IP address
+	char ip_str[16] = "0.0.0.0";
+	esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+	if (netif) {
+		esp_netif_ip_info_t ip_info;
+		if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+			esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str));
+		}
+	}
 
-    // Create JSON response
-    char buf[256];
-    int len = snprintf(buf, sizeof(buf),
-            "{\"heap_free\": %lu, \"ip_address\": \"%s\"}",
-            esp_get_free_heap_size(), ip_str);
+	// Create JSON response
+	char buf[256];
+	int len = snprintf(buf, sizeof(buf),
+			"{\"heap_free\": %lu, \"ip_address\": \"%s\"}",
+			esp_get_free_heap_size(), ip_str);
 
-    httpd_resp_set_type(req, "application/json");
+	httpd_resp_set_type(req, "application/json");
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_send(req, buf, len);
-    return ESP_OK;
+	httpd_resp_send(req, buf, len);
+	return ESP_OK;
+}
+
+static esp_err_t get_data_handler(httpd_req_t *req) {
+	char query[128];
+
+	size_t qlen = httpd_req_get_url_query_len(req) + 1;
+	if (qlen > sizeof(query)) qlen = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, qlen) == ESP_OK) {
+		char device[32] = {0};
+		if (httpd_query_key_value(query, "device", device, sizeof(device)) == ESP_OK) {
+			printf("Device: %s\n", device);
+		}
+	}
+
+	char buf[256];
+	int len = snprintf(buf, sizeof(buf), "[[0,%.2f],[1000,%.2f],[2000,%.2f]]", 1.23f, 1.45f, 1.40f);
+
+	httpd_resp_set_type(req, "application/json");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_send(req, buf, len);
+	
+	return ESP_OK;
 }
 
 // Start HTTP server
@@ -198,7 +221,7 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
 		httpd_register_uri_handler(server, &root);
 
 		httpd_uri_t options_uri = {
-			.uri      = "/*",
+			.uri	  = "/*",
 			.method   = HTTP_OPTIONS,
 			.handler  = options_handler,
 			.user_ctx = NULL,
@@ -206,13 +229,20 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
 		httpd_register_uri_handler(server, &options_uri);
 
 		httpd_uri_t info_uri = {
-			.uri      = "/info",
+			.uri	  = "/info",
 			.method   = HTTP_GET,
 			.handler  = info_get_handler,
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &info_uri);
 
+		httpd_uri_t get_data_uri = {
+			.uri	  = "/data",
+			.method   = HTTP_GET,
+			.handler  = get_data_handler,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &get_data_uri);
 
 		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
 	} else {

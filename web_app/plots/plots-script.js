@@ -166,12 +166,17 @@ async function fetchLiveData() {
 		updateCharts();
 		
 		// Update UI
-		document.getElementById('pointCount').textContent = dataPoints.length;
 		document.getElementById('freeMemory').textContent = Math.floor(value * 1000) + ' bytes';
 		
 		// Update live data feed
 		const liveDataDiv = document.getElementById('liveData');
-		liveDataDiv.textContent = `Time: ${new Date(now * 1000).toLocaleTimeString()}\nValue: ${value.toFixed(2)}\n\n` + liveDataDiv.textContent;
+		const timeStr = new Date(now * 1000).toLocaleTimeString('en-US', {
+			hour12: true,
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
+		liveDataDiv.textContent = `Time: ${timeStr}\nValue: ${value.toFixed(2)}\n\n` + liveDataDiv.textContent;
 		
 		// Keep only last 10 lines
 		const lines = liveDataDiv.textContent.split('\n').slice(0, 10);
@@ -248,5 +253,4 @@ function clearCharts() {
 	dataPoints = [];
 	updateCharts();
 	document.getElementById('liveData').textContent = 'Data cleared';
-	document.getElementById('pointCount').textContent = '0';
 }

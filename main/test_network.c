@@ -8,19 +8,10 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
-
 #include "wifi2/mod_wifi2.h"
 #include "WIFI_CRED.h"
 
-#define EXAMPLE_ESP_MAXIMUM_RETRY  5
 #define BLINK_GPIO 22
-
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group;
-
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT	  BIT1
-
 static const char *TAG = "[ESP-MESS]";
 
 void app_main(void) {
@@ -33,12 +24,13 @@ void app_main(void) {
 	ESP_ERROR_CHECK(ret);
 	ESP_LOGI(TAG, "APP START");
 
-	wifi_init_sta(EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASSWORD);
-
 	//# Setup Blinking
 	static uint8_t s_led_state = 0;
 	gpio_reset_pin(BLINK_GPIO);
 	gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+
+	//# Setup Wifi
+	wifi_init_sta(EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASSWORD);
 
 	while(1) {
 		wifi_poll();
