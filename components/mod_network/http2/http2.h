@@ -132,6 +132,7 @@ static const char *HTML_PAGE =
 "</html>";
 
 static esp_err_t options_handler(httpd_req_t *req) {
+	ESP_LOGW(TAG_HTTP, "Sending OPTIONS response for CORS preflight");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
@@ -144,28 +145,13 @@ static esp_err_t options_handler(httpd_req_t *req) {
 static esp_err_t root_get_handler(httpd_req_t *req) {
 	ESP_LOGI(TAG_HTTP, "Serving HTML page to client");
 	
-	// Set content type to HTML
+	// Set content type to HTML & Send the HTML page
 	httpd_resp_set_type(req, "text/html");
-	
-	// Send the HTML page
 	httpd_resp_send(req, HTML_PAGE, strlen(HTML_PAGE));
-	
 	return ESP_OK;
 }
 
 static esp_err_t info_get_handler(httpd_req_t *req) {
-    // ==== CRITICAL: Add CORS headers FIRST ====
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, OPTIONS");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
-    
-    // ==== Handle OPTIONS (CORS preflight) ====
-    if (req->method == HTTP_OPTIONS) {
-        ESP_LOGI(TAG_HTTP, "Sending OPTIONS response for CORS preflight");
-        httpd_resp_send(req, NULL, 0);
-        return ESP_OK;
-    }
-
     // Get IP address
     char ip_str[16] = "0.0.0.0";
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -183,6 +169,7 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
             esp_get_free_heap_size(), ip_str);
 
     httpd_resp_set_type(req, "application/json");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_send(req, buf, len);
     return ESP_OK;
 }
@@ -191,6 +178,7 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
 static httpd_handle_t start_webserver(void) {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+	config.uri_match_fn = httpd_uri_match_wildcard; 
 	
 	// Configure server
 	config.stack_size = 4096;
@@ -210,7 +198,7 @@ static httpd_handle_t start_webserver(void) {
 		httpd_register_uri_handler(server, &root);
 
 		httpd_uri_t options_uri = {
-			.uri      = "/info",
+			.uri      = "/*",
 			.method   = HTTP_OPTIONS,
 			.handler  = options_handler,
 			.user_ctx = NULL,
@@ -224,6 +212,7 @@ static httpd_handle_t start_webserver(void) {
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &info_uri);
+
 
 		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
 	} else {
