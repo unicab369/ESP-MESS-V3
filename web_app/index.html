@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>ESP32 Web Server</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<style>
+		body {
+			font-family: 'Arial', sans-serif;
+			text-align: center;
+			margin: 0;
+			padding: 20px;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			min-height: 100vh;
+			color: white;
+		}
+		.container {
+			background: rgba(255, 255, 255, 0.1);
+			backdrop-filter: blur(10px);
+			border-radius: 20px;
+			padding: 40px;
+			margin: 50px auto;
+			max-width: 800px;
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+			border: 1px solid rgba(255, 255, 255, 0.2);
+		}
+		h1 {
+			font-size: 3em;
+			margin-bottom: 10px;
+			text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+		}
+		p {
+			font-size: 1.2em;
+			line-height: 1.6;
+			margin: 20px 0;
+		}
+		.info-box {
+			background: rgba(0, 0, 0, 0.2);
+			border-radius: 10px;
+			padding: 20px;
+			margin: 30px 0;
+			text-align: left;
+		}
+		.chip {
+			display: inline-block;
+			background: rgba(255, 255, 255, 0.2);
+			padding: 8px 16px;
+			border-radius: 50px;
+			margin: 5px;
+			font-weight: bold;
+		}
+		.ip-address {
+			font-family: monospace;
+			background: rgba(0, 0, 0, 0.3);
+			padding: 10px 20px;
+			border-radius: 10px;
+			display: inline-block;
+			margin-top: 20px;
+			font-size: 1.5em;
+			letter-spacing: 1px;
+		}
+		.footer {
+			margin-top: 40px;
+			font-size: 0.9em;
+			opacity: 0.8;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>🚀 ESP32 Web Server</h1>
+		<p>Welcome to your ESP32 running an HTTP server!</p>
+		<p>This page is served directly from the ESP32's memory.</p>
+
+        <div>
+			<h3>📍 Server IP Address:</h3>
+			<div class="ip-address" id="ipAddress">Connecting...</div>
+		</div>
+
+		<div class="info-box">
+			<h3>✨ Features:</h3>
+			<div class="chip">WiFi Enabled</div>
+			<div class="chip">HTTP Server</div>
+			<div class="chip">Static Web Page</div>
+			<div class="chip">ESP-IDF</div>
+		</div>
+		
+		<div class="info-box">
+			<h3>📊 System Info:</h3>
+			<p><strong>Free Heap:</strong> <span id="freeHeap">...</span> bytes</p>
+			<p><strong>Uptime:</strong> <span id="uptime">0</span> seconds</p>
+			<p><strong>Chip Model:</strong> ESP32</p>
+		</div>
+		
+		<div class="footer">
+			<p>Refresh page to update system info</p>
+			<p>Server running on ESP-IDF HTTP Server</p>
+		</div>
+	</div>
+	
+	<script>
+		// Update uptime every second
+		let uptime = 0;
+		setInterval(() => {
+			uptime++;
+			document.getElementById('uptime').textContent = uptime;
+		}, 1000);
+		
+		// Fetch system info on page load
+		fetch('/info')
+			.then(response => response.json())
+			.then(data => {
+				document.getElementById('freeHeap').textContent = data.heap_free;
+				document.getElementById('ipAddress').textContent = data.ip_address;
+			});
+	</script>
+</body>
+</html>"
