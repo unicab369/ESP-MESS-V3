@@ -86,8 +86,6 @@ void wifi_poll() {
 			ESP_LOGI(TAG_WIFI, "NTP syncing ...");
 		}
 
-	} else {
-		ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
 	}
 	
 	// Try to connect if not connected (every 10 seconds)
@@ -103,6 +101,7 @@ void wifi_poll() {
 		}
 	}
 }
+
 void wifi_init_sta(const char* sta_ssid, const char* sta_passwd) {
 	ESP_ERROR_CHECK(esp_netif_init());
 

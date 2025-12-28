@@ -27,12 +27,16 @@ time_t time_now(void) {
     return base_time + (elapsed_us / 1000000LL);
 }
 
-char* time_make_str(const char *format) {
-    static char buf[64];
+struct tm timeinfo_now(void) {
     time_t now = time_now();
-    
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
+	return timeinfo;	
+}
+
+char* time_make_str(const char *format) {
+	static char buf[64];
+    struct tm timeinfo = timeinfo_now();
     strftime(buf, sizeof(buf), format, &timeinfo);  // Time only
     return buf;
 }
@@ -62,8 +66,6 @@ void ntp_load_time(void) {
 	tzset();
 
 	time_t ntp_now;
-	struct tm timeinfo;
 	time(&ntp_now);
-	localtime_r(&ntp_now, &timeinfo);
 	time_init(ntp_now);
 }

@@ -59,6 +59,12 @@ void app_main(void) {
 		gpio_set_level(BLINK_GPIO, s_led_state);
         s_led_state = !s_led_state;
 
+        struct tm timeinfo = timeinfo_now();
+        if (timeinfo.tm_year > 70) {
+            // year number starts at 1900, epoch year is 1970
+            ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
+        }
+
         // char output[32];
         // sprintf(output, "%d,3,4,5,6\n", counter++);
         // sd_write_data(MOUNT_POINT"/test.csv", output);
