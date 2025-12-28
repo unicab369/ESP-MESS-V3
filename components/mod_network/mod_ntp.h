@@ -11,38 +11,7 @@
 #include <time.h>
 #include "esp_timer.h"
 
-void ntp_init(void) {
-	// Simple config with one server
-	esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-	esp_netif_sntp_init(&config);
-	esp_netif_sntp_start();
-}
-
-// Wait up to 10 seconds for sync
-bool ntp_wait_sync(void) {
-	return esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) == ESP_OK;
-}
-
-time_t ntp_now;
-struct tm timeinfo;
 int EPOCH_TIME_2000 = 946702800;		// epoch time of 2000-01-01 00:00:00
-
-char *get_ntp_time(void) {
-	// Set timezone once (EST)
-	// setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
-	setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
-	tzset();
-
-	static char time_str[64];
-	time(&ntp_now);
-	localtime_r(&ntp_now, &timeinfo);
-	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
-	return time_str;
-}
-
-
-
-
 static time_t base_time = 0;          // Set this to initial time
 static int64_t base_uptime_us = 0;    // When base_time was set
 
@@ -70,3 +39,31 @@ char* time_make_str(const char *format) {
 
 #define GET_TIME_STR time_make_str("%H:%M:%S")
 #define GET_DATE_TIME_STR time_make_str("%Y-%m-%d %H:%M:%S")
+
+
+
+
+void ntp_init(void) {
+	// Simple config with one server
+	esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+	esp_netif_sntp_init(&config);
+	esp_netif_sntp_start();
+}
+
+// Wait up to 10 seconds for sync
+bool ntp_wait_sync(void) {
+	return esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) == ESP_OK;
+}
+
+void ntp_load_time(void) {
+	// Set timezone once (EST)
+	// setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+	setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
+	tzset();
+
+	time_t ntp_now;
+	struct tm timeinfo;
+	time(&ntp_now);
+	localtime_r(&ntp_now, &timeinfo);
+	time_init(ntp_now);
+}

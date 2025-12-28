@@ -80,8 +80,8 @@ void wifi_poll() {
 		ntp_status = sntp_get_sync_status();
 
 		if (ntp_status == SNTP_SYNC_STATUS_COMPLETED) {
-			ESP_LOGI(TAG_WIFI, "NTP synced: %s", get_ntp_time());
-			time_init(ntp_now);
+			ntp_load_time();
+			ESP_LOGI(TAG_WIFI, "NTP synced: %s", GET_DATE_TIME_STR);
 		} else {
 			ESP_LOGI(TAG_WIFI, "NTP syncing ...");
 		}
