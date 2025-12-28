@@ -1,6 +1,5 @@
 idf_component_register(
 	SRCS
-		"ntp/ntp.c"
 		"udp_socket/udp_socket.c"
 		"tcp_socket/tcp_socket.c"
 		"web_socket/web_socket.c"

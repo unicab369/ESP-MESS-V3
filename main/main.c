@@ -10,7 +10,7 @@
 #include "mod_spi.h"
 #include "mod_sd.h"
 
-#include "wifi2/mod_wifi2.h"
+#include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
 #define BLINK_GPIO 22
@@ -55,13 +55,13 @@ void app_main(void) {
     int counter = 0;
 
 	while (1) {
-		ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
+		// ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
 		gpio_set_level(BLINK_GPIO, s_led_state);
         s_led_state = !s_led_state;
 
-        char output[32];
-        sprintf(output, "%d,3,4,5,6", counter++);
-        sd_write_data(MOUNT_POINT"/test.txt", output);
+        // char output[32];
+        // sprintf(output, "%d,3,4,5,6\n", counter++);
+        // sd_write_data(MOUNT_POINT"/test.csv", output);
         
         wifi_poll();
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
