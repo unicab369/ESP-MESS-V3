@@ -1,17 +1,20 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
 
-#include "esp_wifi.h"
+#include "esp_system.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
+#include "esp_mac.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
 #include "mod_http.h"
 #include "mod_ntp.h"
+
+#include "mdns.h"
 
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
 
@@ -57,13 +60,38 @@ void wifi_poll() {
 		if (current) {
 			ESP_LOGI(TAG_WIFI, "WiFi connected!");
 			
+			
 			// Start HTTP server when WiFi connects
 			if (web_server == NULL) {
+				uint8_t mac[6];
+				esp_read_mac(mac, ESP_MAC_WIFI_STA);
+				ESP_LOGW(TAG_WIFI, "WiFi STA MAC: %02X:%02X:%02X:%02X:%02X:%02X", 
+						mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
 				//# START NTP
 				ntp_init();
 
 				//# START WEB SERVER
 				web_server = start_webserver();
+
+				//# START MDNS
+				esp_err_t err = mdns_init();
+				if (err != ESP_OK) {
+					ESP_LOGE(TAG_WIFI, "mdns_init failed: %d", err);
+				} else {
+					char hostname[32];
+					snprintf(hostname, sizeof(hostname), "esp32-%02X%02X%02X%02X", 
+							mac[2], mac[3], mac[4], mac[5]);
+					// Set hostname: hostname.local
+					mdns_hostname_set(hostname);
+
+					// Friendly instance name
+					mdns_instance_name_set("ESP32 HTTP Server");
+
+					// Advertise an HTTP service on port 80
+					mdns_service_add("ESP32-Web", "_http", "_tcp", 80, NULL, 0);
+					ESP_LOGW(TAG_WIFI, "mDNS started: %s", hostname);
+				}
 			}
 		} else {
 			ESP_LOGI(TAG_WIFI, "WiFi disconnected");

@@ -17,10 +17,10 @@
 #endif
 
 #define MAX_CHAR_SIZE	255
-
-static const char *TAG_SD = "STORAGE_SD";
 #define MOUNT_POINT "/sdcard"
+#define LOG_FILE_UPDATE_INTERVAL 1800			// 1800 seconds OR 30 minutes
 
+static const char *TAG_SD = "[SD]";
 
 static FILE *file;
 
@@ -88,8 +88,6 @@ esp_err_t sd_get(const char *path, char *buff, size_t len) {
 
 static sdmmc_card_t *card;
 static esp_err_t ret;
-const char mount_point[] = MOUNT_POINT;
-
 
 static void check_sd_card(esp_err_t ret) {
 	if (ret != ESP_OK) {
@@ -151,7 +149,7 @@ void sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 	};
 
 	//# Mounting SD card
-	ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
+	ret = esp_vfs_fat_sdspi_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
 	check_sd_card(ret);
 }
 
@@ -229,14 +227,14 @@ void sd_mmc_config(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8
 	//	 .allocation_unit_size = 16 * 1024
 	// };
 
-	// ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
+	// ret = esp_vfs_fat_sdmmc_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
 	// check_sd_card(ret);
 }
 
 
 //# Format Card
 void storage_sd_format_card() {
-	ret = esp_vfs_fat_sdcard_format(mount_point, card);
+	ret = esp_vfs_fat_sdcard_format(MOUNT_POINT, card);
 	if (ret != ESP_OK) {
 		ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(ret));
 		return;
@@ -256,7 +254,7 @@ void storage_sd_format_card() {
 //# Unmount card
 void mod_sd_deinit(spi_host_device_t slot) {
 	//! unmount partition and disable SPI peripheral
-	esp_vfs_fat_sdcard_unmount(mount_point, card);
+	esp_vfs_fat_sdcard_unmount(MOUNT_POINT, card);
 	ESP_LOGI(TAG_SD, "Card unmounted");
 
 	//! deinitialize the bus after all devices are removed
@@ -346,22 +344,22 @@ static bool sd_append_data(const char *path, char *data) {
 
 static void sd_csv_write(const char *uuid, const char *dateStr, const char *data) {
 	char path[128];
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.csv", uuid, dateStr);
 	if (sd_append_data(path, data)) return;
 
-	if (!sd_ensure_dir(MOUNT_POINT"/Log-sec")) {
+	if (!sd_ensure_dir(MOUNT_POINT)) {
 		ESP_LOGE(TAG_SD, "Failed to create directory");
 		return;
 	}
 
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s", uuid);
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s", uuid);
 	if (!sd_ensure_dir(path)) {
 		ESP_LOGE(TAG_SD, "Failed to create directory");
 		return;
 	}
 
 	// Now open /sdcard/Log1/<uuid>/sec/Date.txt
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.csv", uuid, dateStr);
 	if (!sd_append_data(path, data)) {
 		ESP_LOGE(TAG_SD, "Failed to write data");
 	}
@@ -373,102 +371,104 @@ typedef struct {
 	int16_t temperature;
 	int16_t humidity;
 	int16_t lux;
-	uint8_t checksum;
 } __attribute__((packed)) sensors_t;
 
-// Calculate XOR checksum for data integrity
-static uint8_t calculate_checksum(const sensors_t *sensor) {
-    const uint8_t *bytes = (const uint8_t *)sensor;
-    uint8_t sum = 0;
-    
-    // XOR all bytes except the checksum field itself
-    for (size_t i = 0; i < sizeof(sensors_t) - 1; i++) {
-        sum ^= bytes[i];
-    }
-    
-    return sum;
-}
-
-static bool sd_append_bin(const char *path, void *data, int len) {
-	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
+static bool sd_overwrite_bin(const char *path, void *data, int len) {
+	FILE *f = fopen(path, "wb");	 // "wb" for overwrite binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for writing: %s", path);
+		ESP_LOGE(TAG_SD, "Failed to overwrite: %s", path);
 		return false;
 	}
 	fwrite(data, len, 1, f);
 	fclose(f);
-	ESP_LOGI(TAG_SD, "write to file: %s", path);
+	// ESP_LOGI(TAG_SD, "overwrite file: %s", path);
+	return true;
+}
+
+static bool sd_append_bin(const char *path, void *data, int data_len) {
+	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
+	if (f == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to write: %s", path);
+		return false;
+	}
+	fwrite(data, data_len, 1, f);
+	fclose(f);
+	ESP_LOGI(TAG_SD, "write file: %s", path);
 	return true;
 }
 
 static void sd_bin_write(const char *uuid, const char *dateStr, sensors_t* sensors) {
-	sensors->checksum = calculate_checksum(sensors);
+	char path[64];
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 
-	char path[128];
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
-	if (sd_append_bin(path, sensors, sizeof(sensors_t))) return;
+	if (sd_append_bin(path, sensors, sizeof(sensors_t))) {
+		static time_t last_replace = 0;
+		time_t now = time(NULL);
+		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
 
-	if (!sd_ensure_dir(MOUNT_POINT"/Log-sec")) {
+		//# Replace every 1800 seconds OR 30 minutes
+		if (last_replace == 0 || now - last_replace > LOG_FILE_UPDATE_INTERVAL) {
+			last_replace = now;
+			sd_overwrite_bin(path, sensors, sizeof(sensors_t));
+		} else {
+			sd_append_bin(path, sensors, sizeof(sensors_t));
+		}
+		return;
+	}
+
+	if (!sd_ensure_dir(MOUNT_POINT"/log")) {
 		ESP_LOGE(TAG_SD, "Failed to create directory");
 		return;
 	}
 
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s", uuid);
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s", uuid);
 	if (!sd_ensure_dir(path)) {
 		ESP_LOGE(TAG_SD, "Failed to create directory");
 		return;
 	}
 
-	// Now open /sdcard/Log1/<uuid>/sec/Date.txt
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
+	//# Open and write to /sdcard/Log/<uuid>/<dateStr>.bin
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 	if (!sd_append_bin(path, sensors, sizeof(sensors_t))) {
-		ESP_LOGE(TAG_SD, "Failed to write data");
+		ESP_LOGE(TAG_SD, "Failed to write log data");
+	}
+
+	//# Open and write to /sdcard/Log/<uuid>/latest.bin
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
+	if (!sd_append_bin(path, sensors, sizeof(sensors_t))) {
+		ESP_LOGE(TAG_SD, "Failed to write latest data");
 	}
 }
 
 // Function to read and verify binary data
-bool sd_bin_read(const char *uuid, const char *dateStr, sensors_t *buffer, size_t max_records) {
-	char path[128];
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
+size_t sd_bin_read(const char *uuid, const char *dateStr, sensors_t *buffer, size_t max_records) {
+	char path[64];
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", path);
-        return false;
-    }
-    
-    // Get file size
-    fseek(f, 0, SEEK_END);
-    long file_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    // Calculate number of records
-    size_t record_count = file_size / sizeof(sensors_t);
-    if (record_count > max_records) {
-        record_count = max_records;
-    }
-    
-    // Read records
-    size_t records_read = fread(buffer, sizeof(sensors_t), record_count, f);
-    fclose(f);
-    
-    if (records_read != record_count) {
-        ESP_LOGW(TAG_SD, "Partial read: %d of %d records", records_read, record_count);
-    }
-    
-    // Verify checksums
-    int valid_records = 0;
-    for (size_t i = 0; i < records_read; i++) {
-        uint8_t calculated = calculate_checksum(&buffer[i]);
-        if (calculated == buffer[i].checksum) {
-            valid_records++;
-        } else {
-            ESP_LOGW(TAG_SD, "Record %d has invalid checksum", i);
-        }
-    }
-    
-    ESP_LOGI(TAG_SD, "Read %d records (%d valid) from %s", 
-            records_read, valid_records, path);
-    
-    return records_read > 0;
+	FILE *f = fopen(path, "rb");
+	if (f == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", path);
+		return false;
+	}
+
+	// Get file size
+	fseek(f, 0, SEEK_END);
+	long file_size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	// Calculate number of records
+	size_t record_count = file_size / sizeof(sensors_t);
+	if (record_count > max_records) record_count = max_records;
+
+	// Read records
+	size_t records_read = fread(buffer, sizeof(sensors_t), record_count, f);
+	fclose(f);
+
+	if (records_read != record_count) {
+		ESP_LOGW(TAG_SD, "Partial read: %d of %d records", records_read, record_count);
+	}
+
+	ESP_LOGI(TAG_SD, "Read %d records from %s", records_read, path);
+
+	return records_read;
 }

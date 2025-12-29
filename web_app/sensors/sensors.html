@@ -49,6 +49,28 @@
 				<div id="sensorChart"></div>
 			</div>
 		</div>
+
+		<div class="chart-card">
+			<div class="chart-title">📈 Sensor Data2</div>
+			
+			<div class="chart-controls">
+				<label for="timeWindow">Time Window:</label>
+				<select id="timeWindow" onchange="timeWindow_apply()">
+					<option value="1">1 minutes</option>
+					<option value="10">10 minutes</option>
+					<option value="30">30 minutes</option>
+					<option value="60">1 hour</option>
+					<option value="300">5 hours</option>
+					<option value="1440">24 hours</option>
+					<option value="0" selected>All data</option>
+				</select>
+				<button onclick="timeWindow_reset()">Reset</button>
+			</div>
+
+			<div class="chart-wrapper">
+				<div id="sensorChart2"></div>
+			</div>
+		</div>
 		
 		<div class="chart-card">
 			<div class="chart-title">📋 Live Data Feed</div>
@@ -74,7 +96,9 @@
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', function() {
 			initCharts();
-			reloadData();
+
+			let todayDate = getTodayDate();
+			reloadData(todayDate);
 			
 			// // Auto-connect if IP is set
 			// const ipInput = document.getElementById('serverIp');

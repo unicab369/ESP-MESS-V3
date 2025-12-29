@@ -1,5 +1,6 @@
 // Global variables
 let sensorChart = null;
+let sensorChart2 = null;
 let liveDataInterval = null;
 let updateInterval = 1000; // 1 second
 let dataPoints = [];
@@ -53,6 +54,108 @@ function initCharts() {
 	};
 	
 	sensorChart = new uPlot(sensorOpts, sensorData.data, document.getElementById('sensorChart'));
+
+	// Chart 2: Historical data
+	const sensorData2 = {
+		data: [[], [], [], []],
+		series: [
+			{ label: "Time" },
+			{ 
+				label: "Temp",
+				stroke: "red",
+				width: 1
+			},
+			{ 
+				label: "Hum",
+				stroke: "green",
+				width: 1
+			},
+			{ 
+				label: "Lux",
+				stroke: "blue",
+				width: 2
+			}
+		]
+	};
+	
+	const sensorOpts2 = {
+		width: document.getElementById('sensorChart2').offsetWidth,
+		height: 280,
+
+		// cursor: {
+		// 	drag: {
+		// 		x: true,
+		// 		y: true,
+		// 		setScale: false, // Default to panning
+		// 	},
+		// },
+
+		scales: {
+			x: { 
+				time: true,
+				auto: true  // This will auto-range based on your timestamps
+			},
+			y: { 
+				range: [0, 100],  // For temp/humidity
+				grid: { stroke: "#eee" }
+			},
+			y2: {
+				side: 1,  // Right side for lux
+				grid: { stroke: "#e0e0e0" }
+			}
+		},
+
+		axes: [
+			{
+				scale: "x",
+				grid: { stroke: "#eee" }
+			},
+			{
+				scale: "y",
+				values: (u, vals) => vals.map(v => v.toFixed(1)),
+				grid: { stroke: "#eee" }
+			},
+			{
+				scale: "y2",
+				side: 1,
+				values: (u, vals) => vals.map(v => v.toFixed(0)),
+				grid: { stroke: "#e0e0e0" }
+			}
+		],
+		series: [
+			{
+				// X-axis series
+				scale: "x",
+				value: (u, v) => {
+					const date = new Date(v);
+					return date.toLocaleString();
+				}
+			},
+			{
+				scale: "y",
+				label: "Temp(°C)",
+				stroke: "#ff4444",
+				width: 1,
+				value: (u, v) => v?.toFixed(1) + "°C"
+			},
+			{
+				scale: "y",
+				label: "Hum(%)",
+				stroke: "#4444ff",
+				width: 1,
+				value: (u, v) => v?.toFixed(1) + "%"
+			},
+			{
+				scale: "y2",
+				label: "Lux",
+				stroke: "#36454F",
+				width: 1,
+				value: (u, v) => v?.toFixed(0) + " lux"
+			}
+		]
+	};
+	
+	sensorChart2 = new uPlot(sensorOpts2, sensorData2.data, document.getElementById('sensorChart2'));
 }
 
 // Connect to ESP32 server
@@ -83,7 +186,7 @@ async function connectToServer() {
 	}
 }
 
-async function reloadData() {
+async function reloadData(dateStr = null) {
 	const serverIp = document.getElementById('serverIp').value.trim();
 	if (!serverIp) {
 		alert('Please enter ESP32 IP address');
@@ -93,8 +196,9 @@ async function reloadData() {
 	// Example argument
 	const params = new URLSearchParams({
 		device: 'aabbcc',
-		date: '20251228',
+		date: dateStr || 'latest',
 	});
+	console.log('Fetching data:', params.toString());
 
 	try {
 		const startTime = Date.now();
@@ -108,29 +212,39 @@ async function reloadData() {
 			// console.log('Response:', text);
 
 			const buffer = await response.arrayBuffer();
-			const RECORD_SIZE = 11; // 4 + 2 + 2 + 2 + 1 = 11 bytes
+			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
 			const dataView = new DataView(buffer);
 
 			const sensorData = [];
+			const timeStampArr = [];
+			const tempArr = [];
+			const humArr = [];
+			const luxArr = [];
 		
 			for (let i = 0; i < recordCount; i++) {
 				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
 				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
 				const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
 				const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
-				const checksum = dataView.getUint8(i * RECORD_SIZE + 10);			// 1 byte
 				
-				sensorData.push({
-					timestamp: timestamp,
-					temp: temperature,
-					hum: humidity,
-					lux: lux
-				});
+				timeStampArr.push(timestamp);
+				tempArr.push(temperature);
+				humArr.push(humidity);
+				luxArr.push(lux);
+
+				// sensorData.push({
+				// 	timestamp: timestamp,
+				// 	temp: temperature,
+				// 	hum: humidity,
+				// 	lux: lux
+				// });
 			}
 
-			console.log('Response:', sensorData);
+			// console.log('Sensor data:', sensorData);
+			console.log('count:', recordCount);
 			console.log('Response time:', Date.now() - startTime, 'ms');
+			sensorChart2.setData([timeStampArr, tempArr, humArr, luxArr]);
 		} else {
 			throw new Error(`HTTP ${response.status}`);
 		}
@@ -233,4 +347,69 @@ function clearCharts() {
 	dataPoints = [];
 	updateCharts();
 	document.getElementById('liveData').textContent = 'Data cleared';
+}
+
+
+
+
+
+// Store original time range
+let originalDataRange = null;
+
+// Save original range when chart is created
+function saveOriginalRange() {
+	if (sensorChart2 && sensorChart2.data[0].length > 0) {
+		const timestamps = sensorChart2.data[0];
+		originalDataRange = {
+			min: Math.min(...timestamps),
+			max: Math.max(...timestamps)
+		};
+	}
+}
+
+// Simple time window selector
+function timeWindow_apply() {
+	const select = document.getElementById('timeWindow');
+	const minutes = parseInt(select.value);
+	
+	if (!sensorChart2) return;
+	
+	const timestamps = sensorChart2.data[0];
+	if (timestamps.length === 0) return;
+	
+	let xMin, xMax;
+	
+	if (minutes === 0) {
+		// Show all data
+		xMin = originalDataRange ? originalDataRange.min : Math.min(...timestamps);
+		xMax = originalDataRange ? originalDataRange.max : Math.max(...timestamps);
+	} else {
+		// Show last X minutes
+		const latestTime = Math.max(...timestamps);
+		xMax = latestTime;
+		xMin = latestTime - (minutes * 60);
+	}
+	
+	// Apply zoom
+	sensorChart2.setScale('x', { min: xMin, max: xMax });
+}
+
+// Reset to show all data
+function timeWindow_reset() {
+	// if (!sensorChart2 || !originalDataRange) return;
+	reloadData();
+	
+	document.getElementById('timeWindow').value = '0';
+	// sensorChart2.setScale('x', { 
+	// 	min: originalDataRange.min, 
+	// 	max: originalDataRange.max 
+	// });
+}
+
+function getTodayDate(separator = '') {
+	const today = new Date();
+	const year = today.getFullYear();
+	const month = String(today.getMonth() + 1).padStart(2, '0');
+	const day = String(today.getDate()).padStart(2, '0');
+	return `${year}${separator}${month}${separator}${day}`;
 }

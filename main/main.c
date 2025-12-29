@@ -23,8 +23,8 @@ int random_int(int min, int max) {
 }
 
 esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* dateStr) {
-	char path[128];
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", device, dateStr);
+	char path[64];
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", device, dateStr);
 	FILE* _file = fopen(path, "rb");
 
 	if (_file == NULL) {
@@ -111,11 +111,10 @@ void app_main(void) {
 			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
 
 			sensors_t readings = {
-				.timestamp = 1705267200,  // Fixed timestamp
+				.timestamp = (u32_t)time_now(),  // Fixed timestamp
 				.temperature = random_int(20, 30),
 				.humidity = random_int(40, 80),
-				.lux = random_int(0, 1000),
-				.checksum = 0  // Will be calculated
+				.lux = random_int(500, 1000),
 			};
 
 			char datestr[32];

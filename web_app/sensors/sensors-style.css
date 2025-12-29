@@ -134,3 +134,59 @@ input[type="text"] {
 	white-space: pre-wrap;
 	font-size: 14px;
 }
+
+
+
+
+
+/* Chart Controls */
+
+.chart-controls {
+    margin: 15px 0;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.chart-controls label {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.chart-controls select {
+    padding: 5px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: white;
+    min-width: 150px;
+}
+
+.chart-controls button {
+    padding: 5px 15px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.chart-controls button:hover {
+    background: #0056b3;
+}
+
+#customRangeContainer label {
+    margin: 0 10px;
+    white-space: nowrap;
+}
+
+#customRangeContainer input {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-left: 5px;
+}

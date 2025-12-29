@@ -26,3 +26,6 @@ Example work flow: <br>
 idf.py app build
 idf.py flash monitor -p COM4
 ```
+
+## Enable mDNS
+`idf.py menuconfig` > `Component Config` > 
