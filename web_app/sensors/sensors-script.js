@@ -97,13 +97,40 @@ async function reloadData() {
 	});
 
 	try {
+		const startTime = Date.now();
+
 		const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
 			method: 'GET',
 		});
 
 		if (response.ok) {
-			const text = await response.text();
-			console.log('Response preview:', text.substring(0, 500));
+			// const text = await response.text();
+			// console.log('Response:', text);
+
+			const buffer = await response.arrayBuffer();
+			const RECORD_SIZE = 11; // 4 + 2 + 2 + 2 + 1 = 11 bytes
+			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
+			const dataView = new DataView(buffer);
+
+			const sensorData = [];
+		
+			for (let i = 0; i < recordCount; i++) {
+				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
+				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
+				const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
+				const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
+				const checksum = dataView.getUint8(i * RECORD_SIZE + 10);			// 1 byte
+				
+				sensorData.push({
+					timestamp: timestamp,
+					temp: temperature,
+					hum: humidity,
+					lux: lux
+				});
+			}
+
+			console.log('Response:', sensorData);
+			console.log('Response time:', Date.now() - startTime, 'ms');
 		} else {
 			throw new Error(`HTTP ${response.status}`);
 		}

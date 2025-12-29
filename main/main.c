@@ -23,7 +23,10 @@ int random_int(int min, int max) {
 }
 
 esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* dateStr) {
-	FILE *_file = sd_log_file(device, dateStr);
+	char path[128];
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", device, dateStr);
+	FILE* _file = fopen(path, "rb");
+
 	if (_file == NULL) {
 		ESP_LOGE(TAG, "Failed to open file for reading");
         // Send error response
@@ -48,8 +51,6 @@ esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* 
             fclose(_file);
             return err;
         }
-
-		// printf("send trunk %s\n", buffer);
 		total_bytes += bytes_read;
 	}
 	fclose(_file);
@@ -94,7 +95,7 @@ void app_main(void) {
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
 		sd_spi_config(spi_conf0.host, spi_conf0.cs);
-		sd_test();
+		// sd_test();
 	}
 
 	int counter = 0;
@@ -109,17 +110,19 @@ void app_main(void) {
 			// year number starts at 1900, epoch year is 1970
 			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
 
-			char data[48];
-			int temp = random_int(20, 30);			// Temperature: 20-30°C
-			int humidity = random_int(40, 80);		// Humidity: 40-80%
-			int light = random_int(0, 1000);		// Light: 0-1000 lux
-			sprintf(data, "%lld,%d,%d,%d\n", (long long)time_now(), temp, humidity, light);
+			sensors_t readings = {
+				.timestamp = 1705267200,  // Fixed timestamp
+				.temperature = random_int(20, 30),
+				.humidity = random_int(40, 80),
+				.lux = random_int(0, 1000),
+				.checksum = 0  // Will be calculated
+			};
 
 			char datestr[32];
 			strftime(datestr, sizeof(datestr), "%Y%m%d", &timeinfo);
-			// sd_log_data("aabbcc", datestr, data);
+			sd_bin_write("aabbcc", datestr, &readings);
 		}
-				
+
 		wifi_poll();
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}

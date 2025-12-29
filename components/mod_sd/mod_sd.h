@@ -316,17 +316,6 @@ void sd_test(void) {
 }
 
 
-static bool sd_write_data(const char *path, char *data) {
-	FILE *f = fopen(path, "a");	 // "a" for append - create if doesn't exit
-	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for writing: %s", path);
-		return false;
-	}
-	fprintf(f, data);
-	fclose(f);
-	ESP_LOGI(TAG_SD, "write to file: %s", path);
-	return true;
-}
 
 #include <errno.h>
 
@@ -343,10 +332,22 @@ static bool sd_ensure_dir(const char *path) {
 	return true;
 }
 
-void sd_log_data(const char *uuid, const char *dateStr, const char *data) {
+static bool sd_append_data(const char *path, char *data) {
+	FILE *f = fopen(path, "a");	 // "a" for append - create if doesn't exit
+	if (f == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for writing: %s", path);
+		return false;
+	}
+	fprintf(f, data);
+	fclose(f);
+	ESP_LOGI(TAG_SD, "write to file: %s", path);
+	return true;
+}
+
+static void sd_csv_write(const char *uuid, const char *dateStr, const char *data) {
 	char path[128];
 	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
-	if (sd_write_data(path, data)) return;
+	if (sd_append_data(path, data)) return;
 
 	if (!sd_ensure_dir(MOUNT_POINT"/Log-sec")) {
 		ESP_LOGE(TAG_SD, "Failed to create directory");
@@ -361,14 +362,113 @@ void sd_log_data(const char *uuid, const char *dateStr, const char *data) {
 
 	// Now open /sdcard/Log1/<uuid>/sec/Date.txt
 	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
-	if (!sd_write_data(path, data)) {
+	if (!sd_append_data(path, data)) {
 		ESP_LOGE(TAG_SD, "Failed to write data");
 	}
 }
 
-FILE* sd_log_file(const char *uuid, const char *dateStr) {
+    // Prepare data structure (using uint8_t for humidity)
+typedef struct {
+	uint32_t timestamp;
+	int16_t temperature;
+	int16_t humidity;
+	int16_t lux;
+	uint8_t checksum;
+} __attribute__((packed)) sensors_t;
+
+// Calculate XOR checksum for data integrity
+static uint8_t calculate_checksum(const sensors_t *sensor) {
+    const uint8_t *bytes = (const uint8_t *)sensor;
+    uint8_t sum = 0;
+    
+    // XOR all bytes except the checksum field itself
+    for (size_t i = 0; i < sizeof(sensors_t) - 1; i++) {
+        sum ^= bytes[i];
+    }
+    
+    return sum;
+}
+
+static bool sd_append_bin(const char *path, void *data, int len) {
+	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
+	if (f == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for writing: %s", path);
+		return false;
+	}
+	fwrite(data, len, 1, f);
+	fclose(f);
+	ESP_LOGI(TAG_SD, "write to file: %s", path);
+	return true;
+}
+
+static void sd_bin_write(const char *uuid, const char *dateStr, sensors_t* sensors) {
+	sensors->checksum = calculate_checksum(sensors);
+
 	char path[128];
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
-	FILE* file = fopen(path, "r");
-	return file;
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
+	if (sd_append_bin(path, sensors, sizeof(sensors_t))) return;
+
+	if (!sd_ensure_dir(MOUNT_POINT"/Log-sec")) {
+		ESP_LOGE(TAG_SD, "Failed to create directory");
+		return;
+	}
+
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s", uuid);
+	if (!sd_ensure_dir(path)) {
+		ESP_LOGE(TAG_SD, "Failed to create directory");
+		return;
+	}
+
+	// Now open /sdcard/Log1/<uuid>/sec/Date.txt
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
+	if (!sd_append_bin(path, sensors, sizeof(sensors_t))) {
+		ESP_LOGE(TAG_SD, "Failed to write data");
+	}
+}
+
+// Function to read and verify binary data
+bool sd_bin_read(const char *uuid, const char *dateStr, sensors_t *buffer, size_t max_records) {
+	char path[128];
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.bin", uuid, dateStr);
+
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", path);
+        return false;
+    }
+    
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    // Calculate number of records
+    size_t record_count = file_size / sizeof(sensors_t);
+    if (record_count > max_records) {
+        record_count = max_records;
+    }
+    
+    // Read records
+    size_t records_read = fread(buffer, sizeof(sensors_t), record_count, f);
+    fclose(f);
+    
+    if (records_read != record_count) {
+        ESP_LOGW(TAG_SD, "Partial read: %d of %d records", records_read, record_count);
+    }
+    
+    // Verify checksums
+    int valid_records = 0;
+    for (size_t i = 0; i < records_read; i++) {
+        uint8_t calculated = calculate_checksum(&buffer[i]);
+        if (calculated == buffer[i].checksum) {
+            valid_records++;
+        } else {
+            ESP_LOGW(TAG_SD, "Record %d has invalid checksum", i);
+        }
+    }
+    
+    ESP_LOGI(TAG_SD, "Read %d records (%d valid) from %s", 
+            records_read, valid_records, path);
+    
+    return records_read > 0;
 }
