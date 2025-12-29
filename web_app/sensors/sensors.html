@@ -36,7 +36,6 @@
 			</div>
 			
 			<div class="controls">
-				<button class="btn" onclick="updateRate(0.5)">Fast (0.5s)</button>
 				<button class="btn" onclick="updateRate(1)">Normal (1s)</button>
 				<button class="btn" onclick="updateRate(2)">Slow (2s)</button>
 				<button class="btn" onclick="updateRate(5)">Very Slow (5s)</button>
@@ -65,6 +64,17 @@
 					<option value="0" selected>All data</option>
 				</select>
 				<button onclick="timeWindow_reset()">Reset</button>
+
+				<label for="updateWindow">Update Window:</label>
+				<select id="updateWindow" onchange="updateWindow_apply()">
+					<option value="1000" selected>1 second</option>
+					<option value="2000">2 seconds</option>
+					<option value="5000">5 seconds</option>
+					<option value="10000">10 seconds</option>
+					<option value="30000">30 seconds</option>
+					<option value="60000">1 minute</option>
+				</select>
+				<button onclick="updateWindow_pause()">Pause</button>
 			</div>
 
 			<div class="chart-wrapper">

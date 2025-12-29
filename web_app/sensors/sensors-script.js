@@ -5,6 +5,7 @@ let liveDataInterval = null;
 let updateInterval = 1000; // 1 second
 let dataPoints = [];
 let maxPoints = 100;
+let indexDB = null;
 
 // Initialize charts
 function initCharts() {
@@ -186,6 +187,7 @@ async function connectToServer() {
 	}
 }
 
+
 async function reloadData(dateStr = null) {
 	const serverIp = document.getElementById('serverIp').value.trim();
 	if (!serverIp) {
@@ -193,15 +195,19 @@ async function reloadData(dateStr = null) {
 		return;
 	}
 
+	let deviceId = 'aabbcc';
+
 	// Example argument
 	const params = new URLSearchParams({
-		device: 'aabbcc',
+		device: deviceId,
 		date: dateStr || 'latest',
 	});
 	console.log('Fetching data:', params.toString());
 
+	indexDB_setup(deviceId);
+
 	try {
-		const startTime = Date.now();
+		let startTime = Date.now();
 
 		const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
 			method: 'GET',
@@ -215,13 +221,16 @@ async function reloadData(dateStr = null) {
 			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
 			const dataView = new DataView(buffer);
+			console.log('Response time:', Date.now() - startTime, 'ms');
 
 			const sensorData = [];
 			const timeStampArr = [];
 			const tempArr = [];
 			const humArr = [];
 			const luxArr = [];
-		
+			
+			startTime = Date.now();
+
 			for (let i = 0; i < recordCount; i++) {
 				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
 				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
@@ -239,12 +248,15 @@ async function reloadData(dateStr = null) {
 				// 	hum: humidity,
 				// 	lux: lux
 				// });
+
+				indexDB_putReading(deviceId, timestamp, temperature, humidity, lux);
 			}
 
 			// console.log('Sensor data:', sensorData);
 			console.log('count:', recordCount);
-			console.log('Response time:', Date.now() - startTime, 'ms');
+			console.log('Process time:', Date.now() - startTime, 'ms');
 			sensorChart2.setData([timeStampArr, tempArr, humArr, luxArr]);
+			timeWindow_apply();
 		} else {
 			throw new Error(`HTTP ${response.status}`);
 		}
@@ -350,28 +362,46 @@ function clearCharts() {
 }
 
 
+//# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+let chartUpdateTimer = null;
+let isChartPaused = false;
 
-
-
-// Store original time range
-let originalDataRange = null;
-
-// Save original range when chart is created
-function saveOriginalRange() {
-	if (sensorChart2 && sensorChart2.data[0].length > 0) {
-		const timestamps = sensorChart2.data[0];
-		originalDataRange = {
-			min: Math.min(...timestamps),
-			max: Math.max(...timestamps)
-		};
-	}
+function updateWindow_pause() {
+	clearInterval(chartUpdateTimer);
+	chartUpdateTimer = null;
 }
 
-// Simple time window selector
+// Apply update interval
+function updateWindow_apply() {
+	const select = document.getElementById('updateWindow');
+	const value = parseInt(select.value);
+
+	// Clear existing timer
+	if (chartUpdateTimer) {
+		clearInterval(chartUpdateTimer);
+		chartUpdateTimer = null;
+	}
+	
+	// Start new timer if not "Manual only"
+	if (value > 0) {
+		// Update immediately once
+		reloadData();
+		
+		// Set up interval
+		chartUpdateTimer = setInterval(() => {
+			reloadData();
+		}, value);
+	}
+	
+	console.log(`Chart update interval set to: ${value}ms`);
+}
+
+
+//# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 function timeWindow_apply() {
 	const select = document.getElementById('timeWindow');
 	const minutes = parseInt(select.value);
-	
 	if (!sensorChart2) return;
 	
 	const timestamps = sensorChart2.data[0];
@@ -381,8 +411,8 @@ function timeWindow_apply() {
 	
 	if (minutes === 0) {
 		// Show all data
-		xMin = originalDataRange ? originalDataRange.min : Math.min(...timestamps);
-		xMax = originalDataRange ? originalDataRange.max : Math.max(...timestamps);
+		xMin = Math.min(...timestamps);
+		xMax = Math.max(...timestamps);
 	} else {
 		// Show last X minutes
 		const latestTime = Math.max(...timestamps);
@@ -396,14 +426,8 @@ function timeWindow_apply() {
 
 // Reset to show all data
 function timeWindow_reset() {
-	// if (!sensorChart2 || !originalDataRange) return;
 	reloadData();
-	
 	document.getElementById('timeWindow').value = '0';
-	// sensorChart2.setScale('x', { 
-	// 	min: originalDataRange.min, 
-	// 	max: originalDataRange.max 
-	// });
 }
 
 function getTodayDate(separator = '') {
@@ -412,4 +436,88 @@ function getTodayDate(separator = '') {
 	const month = String(today.getMonth() + 1).padStart(2, '0');
 	const day = String(today.getDate()).padStart(2, '0');
 	return `${year}${separator}${month}${separator}${day}`;
+}
+
+
+
+//# %%%%%%%%%%%%%%%%%%%%%%%%%%% INDEXED DB %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function indexDB_setup(deviceId) {
+	const request = indexedDB.open('SensorDB', 1);
+
+	request.onupgradeneeded = function (event) {
+		const db = event.target.result;
+
+		// Create store ONLY if it doesn't exist
+		if (!db.objectStoreNames.contains(deviceId)) {
+			const store = db.createObjectStore(deviceId, {
+				keyPath: 'timestamp'  // Use timestamp as ID
+			});
+		}
+	};
+
+	// When database is ready
+	request.onsuccess = function(e) {
+		indexDB = e.target.result;
+		// console.log('Database ready!');
+	};
+
+	request.onerror = function(e) {
+		console.error('Database error:', e.target.error);
+	};
+}
+
+function indexDB_putReading(deviceId, timestamp, temp, hum, lux) {
+	if (!indexDB) {
+		console.error('Database not ready');
+		return;
+	}
+	
+	const reading = {
+		timestamp: timestamp,
+		temp: temp,
+		hum: hum,
+		lux: lux
+	};
+	
+	const tx = indexDB.transaction([deviceId], 'readwrite');
+	const store = tx.objectStore(deviceId);
+	const request = store.put(reading);			// ceate or overwrite
+	
+	request.onsuccess = function() {
+		// console.log('Data saved with timestamp:', reading.timestamp);
+	};
+	
+	request.onerror = function(e) {
+		console.error('Error saving:', e.target.error);
+	};
+}
+
+
+function indexDB_getReadings(deviceId, startTime, endTime) {
+	if (!indexDB) {
+		console.error('Database not ready');
+		return;
+	}
+	
+	const tx = indexDB.transaction([deviceId], 'readonly');
+	const store = tx.objectStore(deviceId);
+	
+	// Create time range (timestamp is the key)
+	const range = IDBKeyRange.bound(startTime, endTime);
+	const request = store.getAll(range);
+	
+	request.onsuccess = function(e) {
+		const readings = e.target.result;
+		console.log(`Found ${readings.length} readings`);
+		
+		// Do something with data
+		// readings.forEach(r => {
+		// 	console.log(`${new Date(r.timestamp).toLocaleTimeString()}: ${r.temp}°C`);
+		// });
+	};
+	
+	request.onerror = function(e) {
+		console.error('Error reading:', e.target.error);
+	};
 }
