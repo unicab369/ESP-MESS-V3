@@ -92,7 +92,8 @@ async function reloadData() {
 
 	// Example argument
 	const params = new URLSearchParams({
-		device: '11:22:33:44:55:66',
+		device: 'aabbcc',
+		date: '20251228',
 	});
 
 	try {
@@ -101,8 +102,8 @@ async function reloadData() {
 		});
 
 		if (response.ok) {
-			const data = await response.json();
-			console.log('Data:', data);
+			const text = await response.text();
+			console.log('Response preview:', text.substring(0, 500));
 		} else {
 			throw new Error(`HTTP ${response.status}`);
 		}

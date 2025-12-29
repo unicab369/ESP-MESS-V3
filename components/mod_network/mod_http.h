@@ -170,6 +170,9 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
 
 	httpd_resp_set_type(req, "application/json");
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "*");
+
 	httpd_resp_send(req, buf, len);
 	return ESP_OK;
 }
@@ -181,9 +184,14 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 	if (qlen > sizeof(query)) qlen = sizeof(query);
 
 	if (httpd_req_get_url_query_str(req, query, qlen) == ESP_OK) {
-		char device[32] = {0};
-		if (httpd_query_key_value(query, "device", device, sizeof(device)) == ESP_OK) {
-			printf("Device: %s\n", device);
+		char arg_value[32] = {0};
+
+		if (httpd_query_key_value(query, "device", arg_value, sizeof(arg_value)) == ESP_OK) {
+			printf("Device: %s\n", arg_value);
+		}
+
+		if (httpd_query_key_value(query, "date", arg_value, sizeof(arg_value)) == ESP_OK) {
+			printf("Date: %s\n", arg_value);
 		}
 	}
 
@@ -192,13 +200,41 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 
 	httpd_resp_set_type(req, "application/json");
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "*");
 	httpd_resp_send(req, buf, len);
 	
 	return ESP_OK;
 }
 
+esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* dateStr);
+
+static esp_err_t get_data_handler2(httpd_req_t *req) {
+	char query[128];
+    char device[32] = {0};
+    char dateStr[32] = {0};
+	
+	size_t qlen = httpd_req_get_url_query_len(req) + 1;
+	if (qlen > sizeof(query)) qlen = sizeof(query);
+
+    if (httpd_req_get_url_query_str(req, query, qlen) == ESP_OK) {
+        httpd_query_key_value(query, "device", device, sizeof(device));
+        httpd_query_key_value(query, "date", dateStr, sizeof(dateStr));
+    }
+
+    // Validate parameters
+    if (strlen(device) == 0 || strlen(dateStr) == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, 
+            "Missing device or date parameter");
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG_HTTP, "Request for device: %s, date: %s", device, dateStr);	
+	return HTTP_SD_DATA_STREAM(req, device, dateStr);
+}
+
 // Start HTTP server
-	static httpd_handle_t start_webserver(void) {
+static httpd_handle_t start_webserver(void) {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 	config.uri_match_fn = httpd_uri_match_wildcard; 
@@ -239,7 +275,7 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 		httpd_uri_t get_data_uri = {
 			.uri	  = "/data",
 			.method   = HTTP_GET,
-			.handler  = get_data_handler,
+			.handler  = get_data_handler2,
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &get_data_uri);

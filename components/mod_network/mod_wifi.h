@@ -45,10 +45,11 @@ bool is_wifi_connected() {
 	return (esp_wifi_sta_get_ap_info(&ap) == ESP_OK);
 }
 
+static httpd_handle_t web_server = NULL;
+
 void wifi_poll() {
 	static bool connected = false;
 	static uint32_t last_attempt = 0;
-	static httpd_handle_t server = NULL;
 	bool current = is_wifi_connected();
 	static sntp_sync_status_t ntp_status = SNTP_SYNC_STATUS_RESET;
 
@@ -57,20 +58,20 @@ void wifi_poll() {
 			ESP_LOGI(TAG_WIFI, "WiFi connected!");
 			
 			// Start HTTP server when WiFi connects
-			if (server == NULL) {
+			if (web_server == NULL) {
 				//# START NTP
 				ntp_init();
 
 				//# START WEB SERVER
-				server = start_webserver();
+				web_server = start_webserver();
 			}
 		} else {
 			ESP_LOGI(TAG_WIFI, "WiFi disconnected");
 			
 			// Stop HTTP server when WiFi disconnects
-			if (server != NULL) {
-				httpd_stop(server);
-				server = NULL;
+			if (web_server != NULL) {
+				httpd_stop(web_server);
+				web_server = NULL;
 				ESP_LOGI(TAG_WIFI, "HTTP server stopped");
 			}
 		}
@@ -87,7 +88,7 @@ void wifi_poll() {
 		}
 
 	}
-	
+
 	// Try to connect if not connected (every 10 seconds)
 	uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 

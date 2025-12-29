@@ -12,38 +12,38 @@
 #include "esp_timer.h"
 
 int EPOCH_TIME_2000 = 946702800;		// epoch time of 2000-01-01 00:00:00
-static time_t base_time = 0;          // Set this to initial time
-static int64_t base_uptime_us = 0;    // When base_time was set
+static time_t base_time = 0;		  	// Set this to initial time
+static int64_t base_uptime_us = 0;		// When base_time was set
 
 // Initialize with any time you want
 void time_init(time_t initial_time) {
-    base_time = initial_time;
-    base_uptime_us = esp_timer_get_time();
+	base_time = initial_time;
+	base_uptime_us = esp_timer_get_time();
 }
 
 // Get current time (no NTP, no sync)
 time_t time_now(void) {
-    int64_t elapsed_us = esp_timer_get_time() - base_uptime_us;
-    return base_time + (elapsed_us / 1000000LL);
+	int64_t elapsed_us = esp_timer_get_time() - base_uptime_us;
+	return base_time + (elapsed_us / 1000000LL);
 }
 
 struct tm timeinfo_now(void) {
-    time_t now = time_now();
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+	time_t now = time_now();
+	struct tm timeinfo;
+	localtime_r(&now, &timeinfo);
 	return timeinfo;	
 }
 
 char* time_make_str(const char *format) {
 	static char buf[64];
-    struct tm timeinfo = timeinfo_now();
-    strftime(buf, sizeof(buf), format, &timeinfo);  // Time only
-    return buf;
+	struct tm timeinfo = timeinfo_now();
+	strftime(buf, sizeof(buf), format, &timeinfo);  // Time only
+	return buf;
 }
 
 #define GET_TIME_STR time_make_str("%H:%M:%S")
 #define GET_DATE_TIME_STR time_make_str("%Y-%m-%d %H:%M:%S")
-
+#define GET_SHORT_DATE_STR time_make_str("%Y%m%d")
 
 
 

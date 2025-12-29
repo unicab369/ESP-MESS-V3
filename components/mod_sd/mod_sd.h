@@ -26,14 +26,9 @@ static FILE *file;
 
 //# Open File
 esp_err_t sd_fopen(const char *path) {
-	char full_path[MAX_CHAR_SIZE];
-	// Concatenate MOUNT_POINT and the provided path
-	snprintf(full_path, sizeof(full_path), "%s%s", MOUNT_POINT, path);
-
-
 	ESP_LOGI(TAG_SD, "Open file %s", path);
 
-	file = fopen(full_path, "r");
+	file = fopen(path, "r");
 	if (file == NULL) {
 		ESP_LOGE(TAG_SD, "Failed to open file for reading");
 		return ESP_FAIL;
@@ -350,8 +345,7 @@ static bool sd_ensure_dir(const char *path) {
 
 void sd_log_data(const char *uuid, const char *dateStr, const char *data) {
 	char path[128];
-
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.txt", uuid, dateStr);
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
 	if (sd_write_data(path, data)) return;
 
 	if (!sd_ensure_dir(MOUNT_POINT"/Log-sec")) {
@@ -366,8 +360,15 @@ void sd_log_data(const char *uuid, const char *dateStr, const char *data) {
 	}
 
 	// Now open /sdcard/Log1/<uuid>/sec/Date.txt
-	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.txt", uuid, dateStr);
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
 	if (!sd_write_data(path, data)) {
 		ESP_LOGE(TAG_SD, "Failed to write data");
 	}
+}
+
+FILE* sd_log_file(const char *uuid, const char *dateStr) {
+	char path[128];
+	snprintf(path, sizeof(path), MOUNT_POINT"/Log-sec/%s/%s.csv", uuid, dateStr);
+	FILE* file = fopen(path, "r");
+	return file;
 }
