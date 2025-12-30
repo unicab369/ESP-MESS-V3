@@ -27,5 +27,8 @@ idf.py app build
 idf.py flash monitor -p COM4
 ```
 
-## Enable mDNS
-`idf.py menuconfig` > `Component Config` > 
+## Change Folder name length
+
+SD card folder name length is limited to 8 chars
+to extend this
+`idf.py menuconfig` > `Component Config` > `FAT Filesystem Suport` > `Long fileame support` > (prefer stack)

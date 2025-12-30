@@ -182,7 +182,6 @@ async function connectToServer() {
 			throw new Error(`HTTP ${response.status}`);
 		}
 	} catch (error) {
-		alert(`Failed to connect: ${error.message}`);
 		console.error('Connection error:', error);
 	}
 }
@@ -195,12 +194,14 @@ async function reloadData(dateStr = null) {
 		return;
 	}
 
-	let deviceId = 'aabbcc';
+	let deviceId = 'aabbccdd';
 
 	// Example argument
 	const params = new URLSearchParams({
 		device: deviceId,
-		date: dateStr || 'latest',
+		year: 2025,
+		month: "",
+		day: ""
 	});
 	console.log('Fetching data:', params.toString());
 
@@ -248,8 +249,6 @@ async function reloadData(dateStr = null) {
 				// 	hum: humidity,
 				// 	lux: lux
 				// });
-
-				// indexDB_putReading(deviceId, timestamp, temperature, humidity, lux);
 			}
 
 			// console.log('Sensor data:', sensorData);
@@ -261,7 +260,6 @@ async function reloadData(dateStr = null) {
 			throw new Error(`HTTP ${response.status}`);
 		}
 	} catch (error) {
-		alert(`Failed to connect: ${error.message}`);
 		console.error('Connection error:', error);
 	}
 }

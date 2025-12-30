@@ -2,13 +2,13 @@
 #include <string.h>
 #include <sys/unistd.h>
 #include <sys/stat.h>
-#include "sdmmc_cmd.h"
 
-#include <sys/unistd.h>
-#include <sys/stat.h>
+#include <dirent.h>
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "sd_test_io.h"
+
+#include <time.h>
 
 // link: https://github.com/espressif/esp-idf/tree/master/examples/storage/sd_card
 
@@ -315,6 +315,8 @@ void sd_test(void) {
 
 
 
+
+
 #include <errno.h>
 
 static bool sd_ensure_dir(const char *path) {
@@ -365,21 +367,72 @@ static void sd_csv_write(const char *uuid, const char *dateStr, const char *data
 	}
 }
 
-    // Prepare data structure (using uint8_t for humidity)
-typedef struct {
-	uint32_t timestamp;
-	int16_t value1;
-	int16_t value2;
-	int16_t value3;
-} __attribute__((packed)) sensors_t;
 
-static bool sd_overwrite_bin(const char *path, void *data, int len) {
+
+
+static bool sd_remove_dir_recursive(const char* path) {
+    DIR* dir = opendir(path);
+    if (!dir) {
+        ESP_LOGE(TAG_SD, "Cannot open directory: %s", path);
+        return false;
+    }
+    
+    struct dirent* entry;
+    char full_path[512];
+    bool success = true;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // Build full path
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        
+        struct stat statbuf;
+        if (stat(full_path, &statbuf) != 0) {
+            ESP_LOGW(TAG_SD, "Cannot stat: %s", full_path);
+            continue;
+        }
+        
+        if (S_ISDIR(statbuf.st_mode)) {
+            // Recursively remove subdirectory
+            if (!sd_remove_dir_recursive(full_path)) {
+                success = false;
+            }
+        } else {
+            // Remove file
+            if (remove(full_path) != 0) {
+                ESP_LOGE(TAG_SD, "Failed to remove file %s, error: %d", 
+                        full_path, errno);
+                success = false;
+            } else {
+                ESP_LOGI(TAG_SD, "Removed file: %s", full_path);
+            }
+        }
+    }
+    
+    closedir(dir);
+    
+    // Now remove the (hopefully) empty directory
+    if (rmdir(path) != 0) {
+        ESP_LOGE(TAG_SD, "Failed to remove directory %s, error: %d", 
+                path, errno);
+        return false;
+    }
+    
+    ESP_LOGI(TAG_SD, "Removed directory: %s", path);
+    return success;
+}
+
+static bool sd_overwrite_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "wb");	 // "wb" for overwrite binary - create if doesn't exit
 	if (f == NULL) {
 		ESP_LOGE(TAG_SD, "Failed to overwrite: %s", path);
 		return false;
 	}
-	fwrite(data, len, 1, f);
+	fwrite(data, data_len, 1, f);
 	fclose(f);
 	// ESP_LOGI(TAG_SD, "overwrite file: %s", path);
 	return true;
@@ -397,11 +450,27 @@ static bool sd_append_bin(const char *path, void *data, int data_len) {
 	return true;
 }
 
-static void sd_bin_write(const char *uuid, const char *dateStr, sensors_t* sensors) {
+typedef struct {
+	uint32_t timestamp;
+	int16_t value1;
+	int16_t value2;
+	int16_t value3;
+} __attribute__((packed)) record_t;
+
+typedef struct {
+	uint8_t uuid[4];
+	uint32_t timeRef;
+	int8_t count;			// aggregated count
+	int16_t sum1;
+	int16_t sum2;
+	int16_t sum3;
+} record_ref;
+
+static void sd_bin_write(const char *uuid, const char *dateStr, record_t* records) {
 	char path[64];
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 
-	if (sd_append_bin(path, sensors, sizeof(sensors_t))) {
+	if (sd_append_bin(path, records, sizeof(record_t))) {
 		static time_t last_replace = 0;
 		time_t now = time(NULL);
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
@@ -409,15 +478,10 @@ static void sd_bin_write(const char *uuid, const char *dateStr, sensors_t* senso
 		//# Replace every 1800 seconds OR 30 minutes
 		if (last_replace == 0 || now - last_replace > LOG_FILE_UPDATE_INTERVAL) {
 			last_replace = now;
-			sd_overwrite_bin(path, sensors, sizeof(sensors_t));
+			sd_overwrite_bin(path, records, sizeof(record_t));
 		} else {
-			sd_append_bin(path, sensors, sizeof(sensors_t));
+			sd_append_bin(path, records, sizeof(record_t));
 		}
-		return;
-	}
-
-	if (!sd_ensure_dir(MOUNT_POINT"/log")) {
-		ESP_LOGE(TAG_SD, "Failed to create directory");
 		return;
 	}
 
@@ -429,19 +493,100 @@ static void sd_bin_write(const char *uuid, const char *dateStr, sensors_t* senso
 
 	//# Open and write to /sdcard/Log/<uuid>/<dateStr>.bin
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
-	if (!sd_append_bin(path, sensors, sizeof(sensors_t))) {
+	if (!sd_append_bin(path, records, sizeof(record_t))) {
 		ESP_LOGE(TAG_SD, "Failed to write log data");
 	}
 
 	//# Open and write to /sdcard/Log/<uuid>/latest.bin
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
-	if (!sd_append_bin(path, sensors, sizeof(sensors_t))) {
+	if (!sd_append_bin(path, records, sizeof(record_t))) {
 		ESP_LOGE(TAG_SD, "Failed to write latest data");
 	}
 }
 
+
+#define LOG_RECORD_COUNT 10
+record_ref ref[LOG_RECORD_COUNT] = {0};
+uint8_t target_empty[4] = {0};
+char file_path[64];
+
+// STEP1: 2025/latest.bin - 1 hour of record every second (3600 records)
+// STEP2: 2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
+// STEP3: 2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
+
+static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
+	//# STEP1: `/log/<uuid>/2025/latest.bin`
+	int year = tm->tm_year + 1900;
+	int month = tm->tm_mon + 1;
+	int day = tm->tm_mday;
+
+	time_t now = time(NULL);
+
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		if (memcmp(ref[i].uuid, target_empty, sizeof(target_empty)) == 0) break;
+
+		//# /log/<uuid>
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X", 
+			uuid[0], uuid[1], uuid[2], uuid[3]
+		);
+		if (!sd_ensure_dir(file_path)) {
+			ESP_LOGE(TAG_SD, "Failed to create /<uuid>");
+			continue;
+		}
+
+		//# /log/<uuid>/2025
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d", 
+			uuid[0], uuid[1], uuid[2], uuid[3], year
+		);
+		if (!sd_ensure_dir(file_path)) {
+			ESP_LOGE(TAG_SD, "Failed to create /<uuid>/year");
+			continue;
+		}
+
+		uint32_t time_dif = now - ref[i].timeRef;
+
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d/latest.bin", 
+			uuid[0], uuid[1], uuid[2], uuid[3], year
+		);
+
+		//# replace 1 hour of records for every second (3600 records)
+		if (ref[i].timeRef == 0 || time_dif > 3600) {
+			ref[i].timeRef = now;
+			sd_overwrite_bin(file_path, record, sizeof(record_t));
+		}
+		else {
+			sd_append_bin(file_path, record, sizeof(record_t));
+		}
+
+		ref[i].count++;
+		ref[i].sum1 += record->value1;
+		ref[i].sum2 += record->value2;
+		ref[i].sum3 += record->value3;
+
+		if (ref[i].count >= 60) {
+			record_t minute_avg = {
+				.timestamp = record->timestamp,
+				.value1 = ref[i].sum1 / ref[i].count,
+				.value2 = ref[i].sum2 / ref[i].count,
+				.value3 = ref[i].sum3 / ref[i].count
+			};
+
+			//# STEP2: `/log/<uuid>/2025/1230.bin`
+			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d/%d%d.bin", 
+				uuid[0], uuid[1], uuid[2], uuid[3], year, month, day
+			);
+			sd_append_bin(file_path, record, sizeof(record_t));
+
+			ref[i].count = 0;
+			ref[i].sum1 = 0;
+			ref[i].sum2 = 0;
+			ref[i].sum3 = 0;
+		}
+	}
+}
+
 // Function to read and verify binary data
-size_t sd_bin_read(const char *uuid, const char *dateStr, sensors_t *buffer, size_t max_records) {
+size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size_t max_records) {
 	char path[64];
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 
@@ -457,11 +602,11 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, sensors_t *buffer, siz
 	fseek(f, 0, SEEK_SET);
 
 	// Calculate number of records
-	size_t record_count = file_size / sizeof(sensors_t);
+	size_t record_count = file_size / sizeof(record_t);
 	if (record_count > max_records) record_count = max_records;
 
 	// Read records
-	size_t records_read = fread(buffer, sizeof(sensors_t), record_count, f);
+	size_t records_read = fread(buffer, sizeof(record_t), record_count, f);
 	fclose(f);
 
 	if (records_read != record_count) {
