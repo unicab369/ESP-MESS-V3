@@ -16,6 +16,9 @@
 
 #define LED_PIN 22
 #define MODE_PIN 12
+
+#define RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
+
 static const char *TAG = "[ESP-MESS]";
 
 
@@ -24,10 +27,10 @@ int random_int(int min, int max) {
 }
 
 esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, 
-	const char *year, const char *month, const char* day
+	const char *year, const char *month, const char* day, int timeWindow
 ) {
 	char path[64];
-	if (strlen(month) > 0 && strlen(day) > 0) {
+	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/%s%s.bin", device, year, month, day);
 	} else {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/latest.bin", device, year);

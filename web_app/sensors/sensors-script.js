@@ -7,6 +7,10 @@ let dataPoints = [];
 let maxPoints = 100;
 let indexDB = null;
 
+function get_timeWindow() {
+	return document.getElementById('timeWindow');
+}
+
 // Initialize charts
 function initCharts() {
 	// Chart 1: Real-time sensor data
@@ -198,10 +202,11 @@ async function reloadData(dateStr = null) {
 
 	// Example argument
 	const params = new URLSearchParams({
-		device: deviceId,
-		year: 2025,
-		month: "",
-		day: ""
+		dev: deviceId,					// device
+		yr: 2025,						// year
+		mth: 12,						// month
+		day: 30,						// day
+		win: get_timeWindow().value 	// time window
 	});
 	console.log('Fetching data:', params.toString());
 
@@ -360,6 +365,47 @@ function clearCharts() {
 }
 
 
+//# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function timeWindow_apply() {
+	const minutes = parseInt(get_timeWindow().value);
+	if (!sensorChart2) return;
+	
+	const timestamps = sensorChart2.data[0];
+	if (timestamps.length === 0) return;
+	
+	let xMin, xMax;
+	
+	if (minutes === 0) {
+		// Show all data
+		xMin = Math.min(...timestamps);
+		xMax = Math.max(...timestamps);
+	} else {
+		// Show last X minutes
+		const latestTime = Math.max(...timestamps);
+		xMax = latestTime;
+		xMin = latestTime - (minutes * 60);
+	}
+	
+	// Apply zoom
+	sensorChart2.setScale('x', { min: xMin, max: xMax });
+}
+
+// Reset to show all data
+function timeWindow_reset() {
+	reloadData();
+	get_timeWindow().value = '1';
+}
+
+function getTodayDate(separator = '') {
+	const today = new Date();
+	const year = today.getFullYear();
+	const month = String(today.getMonth() + 1).padStart(2, '0');
+	const day = String(today.getDate()).padStart(2, '0');
+	return `${year}${separator}${month}${separator}${day}`;
+}
+
+
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 let chartUpdateTimer = null;
 let isChartPaused = false;
@@ -391,49 +437,6 @@ function updateWindow_apply() {
 		}, value);
 	}
 }
-
-
-//# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-function timeWindow_apply() {
-	const select = document.getElementById('timeWindow');
-	const minutes = parseInt(select.value);
-	if (!sensorChart2) return;
-	
-	const timestamps = sensorChart2.data[0];
-	if (timestamps.length === 0) return;
-	
-	let xMin, xMax;
-	
-	if (minutes === 0) {
-		// Show all data
-		xMin = Math.min(...timestamps);
-		xMax = Math.max(...timestamps);
-	} else {
-		// Show last X minutes
-		const latestTime = Math.max(...timestamps);
-		xMax = latestTime;
-		xMin = latestTime - (minutes * 60);
-	}
-	
-	// Apply zoom
-	sensorChart2.setScale('x', { min: xMin, max: xMax });
-}
-
-// Reset to show all data
-function timeWindow_reset() {
-	reloadData();
-	document.getElementById('timeWindow').value = '0';
-}
-
-function getTodayDate(separator = '') {
-	const today = new Date();
-	const year = today.getFullYear();
-	const month = String(today.getMonth() + 1).padStart(2, '0');
-	const day = String(today.getDate()).padStart(2, '0');
-	return `${year}${separator}${month}${separator}${day}`;
-}
-
 
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% INDEXED DB %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
