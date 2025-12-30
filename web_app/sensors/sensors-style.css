@@ -165,16 +165,6 @@ input[type="text"] {
     min-width: 150px;
 }
 
-.chart-controls button {
-    padding: 5px 15px;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
 .chart-controls button:hover {
     background: #0056b3;
 }

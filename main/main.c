@@ -34,13 +34,12 @@ esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* 
 		return ESP_OK;
 	}
 
-	ESP_LOGW(TAG, "File opened successfully, starting stream...");
     // Set response headers
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
 	// Stream file content in chunks
-	char buffer[512];
+	char buffer[1024];
 	size_t bytes_read;
 	size_t total_bytes = 0;
 
@@ -54,7 +53,7 @@ esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, const char* 
 		total_bytes += bytes_read;
 	}
 	fclose(_file);
-	ESP_LOGW(TAG, "total Bytes: %d", total_bytes);
+	ESP_LOGW(TAG, "total Bytes streamed: %d", total_bytes);
 	
 	// End chunked response
 	httpd_resp_send_chunk(req, NULL, 0);
@@ -112,9 +111,9 @@ void app_main(void) {
 
 			sensors_t readings = {
 				.timestamp = (u32_t)time_now(),  // Fixed timestamp
-				.temperature = random_int(20, 30),
-				.humidity = random_int(40, 80),
-				.lux = random_int(500, 1000),
+				.value1 = random_int(20, 30),
+				.value2 = random_int(70, 80),
+				.value3 = random_int(800, 1000),
 			};
 
 			char datestr[32];

@@ -136,21 +136,21 @@ function initCharts() {
 				scale: "y",
 				label: "Temp(°C)",
 				stroke: "#ff4444",
-				width: 1,
+				width: 1.5,
 				value: (u, v) => v?.toFixed(1) + "°C"
 			},
 			{
 				scale: "y",
 				label: "Hum(%)",
 				stroke: "#4444ff",
-				width: 1,
+				width: 1.5,
 				value: (u, v) => v?.toFixed(1) + "%"
 			},
 			{
 				scale: "y2",
 				label: "Lux",
 				stroke: "#36454F",
-				width: 1,
+				width: 1.5,
 				value: (u, v) => v?.toFixed(0) + " lux"
 			}
 		]
@@ -249,12 +249,12 @@ async function reloadData(dateStr = null) {
 				// 	lux: lux
 				// });
 
-				indexDB_putReading(deviceId, timestamp, temperature, humidity, lux);
+				// indexDB_putReading(deviceId, timestamp, temperature, humidity, lux);
 			}
 
 			// console.log('Sensor data:', sensorData);
 			console.log('count:', recordCount);
-			console.log('Process time:', Date.now() - startTime, 'ms');
+			// console.log('Process time:', Date.now() - startTime, 'ms');
 			sensorChart2.setData([timeStampArr, tempArr, humArr, luxArr]);
 			timeWindow_apply();
 		} else {
@@ -392,8 +392,6 @@ function updateWindow_apply() {
 			reloadData();
 		}, value);
 	}
-	
-	console.log(`Chart update interval set to: ${value}ms`);
 }
 
 

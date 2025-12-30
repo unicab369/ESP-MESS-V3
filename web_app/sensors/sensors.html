@@ -21,10 +21,6 @@
 					<div>Free Memory</div>
 					<div id="freeMemory">---</div>
 				</div>
-				<div class="status-item">
-					<div>Update Rate</div>
-					<div><span id="updateRate">1</span> sec</div>
-				</div>
 			</div>
 			
 			<div class="input-group">
@@ -35,18 +31,11 @@
 				<button class="btn" onclick="clearCharts()">Clear</button>
 			</div>
 			
-			<div class="controls">
+			<!-- <div class="controls">
 				<button class="btn" onclick="updateRate(1)">Normal (1s)</button>
 				<button class="btn" onclick="updateRate(2)">Slow (2s)</button>
 				<button class="btn" onclick="updateRate(5)">Very Slow (5s)</button>
-			</div>
-		</div>
-		
-		<div class="chart-card">
-			<div class="chart-title">📊 Real-time Sensor Data</div>
-			<div class="chart-wrapper">
-				<div id="sensorChart"></div>
-			</div>
+			</div> -->
 		</div>
 
 		<div class="chart-card">
@@ -55,39 +44,51 @@
 			<div class="chart-controls">
 				<label for="timeWindow">Time Window:</label>
 				<select id="timeWindow" onchange="timeWindow_apply()">
-					<option value="1">1 minutes</option>
-					<option value="10">10 minutes</option>
-					<option value="30">30 minutes</option>
+					<option value="1">1 minute</option>
+					<option value="5" selected>5 minutes</option>
+					<option value="20">20 minutes</option>
 					<option value="60">1 hour</option>
 					<option value="300">5 hours</option>
-					<option value="1440">24 hours</option>
-					<option value="0" selected>All data</option>
+					<option value="720">12 hours</option>
+					<option value="1440">1 day</option>
+					<option value="4320">3 days</option>
+					<option value="10080">7 days</option>
+					<option value="43200">1 month</option>
+					<option value="129600">3 months</option>
+					<option value="259200">6 months</option>
+					<option value="0">All data</option>
 				</select>
-				<button onclick="timeWindow_reset()">Reset</button>
+				<button class="btn" onclick="timeWindow_reset()">Reset</button>
 
 				<label for="updateWindow">Update Window:</label>
 				<select id="updateWindow" onchange="updateWindow_apply()">
-					<option value="1000" selected>1 second</option>
-					<option value="2000">2 seconds</option>
+					<option value="1000">1 second</option>
+					<option value="2000" selected>2 seconds</option>
 					<option value="5000">5 seconds</option>
 					<option value="10000">10 seconds</option>
 					<option value="30000">30 seconds</option>
-					<option value="60000">1 minute</option>
 				</select>
-				<button onclick="updateWindow_pause()">Pause</button>
+				<button class="btn" onclick="updateWindow_pause()">Pause</button>
 			</div>
 
 			<div class="chart-wrapper">
 				<div id="sensorChart2"></div>
 			</div>
 		</div>
-		
+
+		<div class="chart-card">
+			<div class="chart-title">📊 Real-time Sensor Data</div>
+			<div class="chart-wrapper">
+				<div id="sensorChart"></div>
+			</div>
+		</div>
+
 		<div class="chart-card">
 			<div class="chart-title">📋 Live Data Feed</div>
 			<pre id="liveData">Waiting for data...</pre>
 		</div>
 	</div>
-	
+
 	<!-- uPlot JavaScript -->
 	<script src="../lib/uplot/dist/uPlot.iife.min.js"></script>
 	<script src="sensors-script.js"></script>
@@ -108,7 +109,8 @@
 			initCharts();
 
 			let todayDate = getTodayDate();
-			reloadData(todayDate);
+			// reloadData(todayDate);
+			updateWindow_apply();
 			
 			// // Auto-connect if IP is set
 			// const ipInput = document.getElementById('serverIp');

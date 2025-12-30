@@ -368,9 +368,9 @@ static void sd_csv_write(const char *uuid, const char *dateStr, const char *data
     // Prepare data structure (using uint8_t for humidity)
 typedef struct {
 	uint32_t timestamp;
-	int16_t temperature;
-	int16_t humidity;
-	int16_t lux;
+	int16_t value1;
+	int16_t value2;
+	int16_t value3;
 } __attribute__((packed)) sensors_t;
 
 static bool sd_overwrite_bin(const char *path, void *data, int len) {
