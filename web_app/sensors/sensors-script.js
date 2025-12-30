@@ -1,5 +1,4 @@
 // Global variables
-let sensorChart = null;
 let sensorChart2 = null;
 let liveDataInterval = null;
 let updateInterval = 1000; // 1 second
@@ -7,160 +6,141 @@ let dataPoints = [];
 let maxPoints = 100;
 let indexDB = null;
 
+let chartIds = ['aabbccdd', 'aabbccda'];
+let charts = [];
+
 function get_timeWindow() {
 	return document.getElementById('timeWindow');
 }
 
 // Initialize charts
 function initCharts() {
-	// Chart 1: Real-time sensor data
-	const sensorData = {
-		data: [[], []], // [timestamps, values]
-		series: [
-			{ label: "Time" },
-			{ 
-				label: "Sensor Value",
-				stroke: "blue",
-				width: 2,
-				fill: "rgba(0, 119, 255, 0.1)"
-			}
-		]
-	};
-	
-	const sensorOpts = {
-		title: "Live Sensor Data",
-		width: document.getElementById('sensorChart').offsetWidth,
-		height: 280,
-		scales: {
-			x: { time: true },
-			y: { 
-				range: [0, 100],
-				grid: { stroke: "#eee" }
-			}
-		},
-		series: [
-			{},
-			{
-				label: "Value",
-				stroke: "#0077ff",
-				width: 2
-			}
-		],
-		axes: [
-			{
-				stroke: "#333",
-				grid: { stroke: "#eee" }
-			},
-			{
-				stroke: "#333",
-				grid: { stroke: "#eee" }
-			}
-		]
-	};
-	
-	sensorChart = new uPlot(sensorOpts, sensorData.data, document.getElementById('sensorChart'));
+	let output = ``
 
-	// Chart 2: Historical data
-	const sensorData2 = {
-		data: [[], [], [], []],
-		series: [
-			{ label: "Time" },
-			{ 
-				label: "Temp",
-				stroke: "red",
-				width: 1
-			},
-			{ 
-				label: "Hum",
-				stroke: "green",
-				width: 1
-			},
-			{ 
-				label: "Lux",
-				stroke: "blue",
-				width: 2
-			}
-		]
-	};
-	
-	const sensorOpts2 = {
-		width: document.getElementById('sensorChart2').offsetWidth,
-		height: 280,
+	for (const chart_id of chartIds) {
+		output +=  /*html*/
+			`<div class="chart-card">
+				<div class="chart-title">📈 Node: ${ chart_id }</div>
+				
+				<div class="chart-controls">
+					<label for="timeWindow">Time Window:</label>
+					<select id="timeWindow" onchange="timeWindow_apply()">
+						<option value="1">1 minute</option>
+						<option value="5" selected>5 minutes</option>
+						<option value="20">20 minutes</option>
+						<option value="60">1 hour</option>
+						<option value="300">5 hours</option>
+						<option value="720">12 hours</option>
+						<option value="1440">1 day</option>
+						<option value="4320">3 days</option>
+						<option value="10080">7 days</option>
+						<option value="43200">1 month</option>
+						<option value="129600">3 months</option>
+						<option value="259200">6 months</option>
+						<option value="0">All data</option>
+					</select>
+					<button class="btn" onclick="timeWindow_reset()">Reset</button>
 
-		// cursor: {
-		// 	drag: {
-		// 		x: true,
-		// 		y: true,
-		// 		setScale: false, // Default to panning
-		// 	},
-		// },
+					<label for="updateWindow">Update Window:</label>
+					<select id="updateWindow" onchange="updateWindow_apply()">
+						<option value="1000">1 second</option>
+						<option value="2000" selected>2 seconds</option>
+						<option value="5000">5 seconds</option>
+						<option value="10000">10 seconds</option>
+						<option value="30000">30 seconds</option>
+					</select>
+					<button class="btn" onclick="updateWindow_pause()">Pause</button>
+				</div>
 
-		scales: {
-			x: { 
-				time: true,
-				auto: true  // This will auto-range based on your timestamps
-			},
-			y: { 
-				range: [0, 100],  // For temp/humidity
-				grid: { stroke: "#eee" }
-			},
-			y2: {
-				side: 1,  // Right side for lux
-				grid: { stroke: "#e0e0e0" }
-			}
-		},
+				<div class="chart-wrapper">
+					<div id="chart-${chart_id}"></div>
+				</div>
+			</div>
+			`
+	}
 
-		axes: [
-			{
-				scale: "x",
-				grid: { stroke: "#eee" }
-			},
-			{
-				scale: "y",
-				values: (u, vals) => vals.map(v => v.toFixed(1)),
-				grid: { stroke: "#eee" }
-			},
-			{
-				scale: "y2",
-				side: 1,
-				values: (u, vals) => vals.map(v => v.toFixed(0)),
-				grid: { stroke: "#e0e0e0" }
-			}
-		],
-		series: [
-			{
-				// X-axis series
-				scale: "x",
-				value: (u, v) => {
-					const date = new Date(v);
-					return date.toLocaleString();
+	document.getElementById('charts-container').innerHTML = output
+
+	for (const chart_id of chartIds) {
+		const chartOptions = {
+			width: document.getElementById(`chart-${chart_id}`).offsetWidth,
+			height: 250,
+
+			// cursor: {
+			// 	drag: {
+			// 		x: true,
+			// 		y: true,
+			// 		setScale: false, // Default to panning
+			// 	},
+			// },
+
+			scales: {
+				x: { 
+					time: true,
+					auto: true  // This will auto-range based on your timestamps
+				},
+				y: { 
+					range: [0, 100],  // For temp/humidity
+					grid: { stroke: "#eee" }
+				},
+				y2: {
+					side: 1,  // Right side for lux
+					grid: { stroke: "#e0e0e0" }
 				}
 			},
-			{
-				scale: "y",
-				label: "Temp(°C)",
-				stroke: "#ff4444",
-				width: 1.5,
-				value: (u, v) => v?.toFixed(1) + "°C"
-			},
-			{
-				scale: "y",
-				label: "Hum(%)",
-				stroke: "#4444ff",
-				width: 1.5,
-				value: (u, v) => v?.toFixed(1) + "%"
-			},
-			{
-				scale: "y2",
-				label: "Lux",
-				stroke: "#36454F",
-				width: 1.5,
-				value: (u, v) => v?.toFixed(0) + " lux"
-			}
-		]
-	};
-	
-	sensorChart2 = new uPlot(sensorOpts2, sensorData2.data, document.getElementById('sensorChart2'));
+			axes: [
+				{
+					scale: "x",
+					grid: { stroke: "#eee" }
+				},
+				{
+					scale: "y",
+					values: (u, vals) => vals.map(v => v.toFixed(1)),
+					grid: { stroke: "#eee" }
+				},
+				{
+					scale: "y2",
+					side: 1,
+					values: (u, vals) => vals.map(v => v.toFixed(0)),
+					grid: { stroke: "#eee" }
+				}
+			],
+			series: [
+				{
+					// X-axis series
+					scale: "x",
+					value: (u, v) => {
+						const date = new Date(v);
+						return date.toLocaleString();
+					}
+				},
+				{
+					scale: "y",
+					label: "Temp(°C)",
+					stroke: "#ff4444",
+					width: 1.5,
+					value: (u, v) => v?.toFixed(1) + "°C"
+				},
+				{
+					scale: "y",
+					label: "Hum(%)",
+					stroke: "#4444ff",
+					width: 1.5,
+					value: (u, v) => v?.toFixed(1) + "%"
+				},
+				{
+					scale: "y2",
+					label: "Lux",
+					stroke: "#36454F",
+					width: 1.5,
+					value: (u, v) => v?.toFixed(0) + " lux"
+				}
+			]
+		};
+
+		charts.push(new uPlot(chartOptions, [], document.getElementById(`chart-${chart_id}`)))
+	}
+
 }
 
 // Connect to ESP32 server
@@ -198,170 +178,72 @@ async function reloadData(dateStr = null) {
 		return;
 	}
 
-	let deviceId = 'aabbccdd';
+	for (let i=0; i<charts.length; i++) {
+		let deviceId = 'aabbccdd';
 
-	// Example argument
-	const params = new URLSearchParams({
-		dev: deviceId,					// device
-		yr: 2025,						// year
-		mth: 12,						// month
-		day: 30,						// day
-		win: get_timeWindow().value 	// time window
-	});
-	console.log('Fetching data:', params.toString());
-
-	indexDB_setup(deviceId);
-
-	try {
-		let startTime = Date.now();
-
-		const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
-			method: 'GET',
+		const params = new URLSearchParams({
+			dev: deviceId,					// device
+			yr: 2025,						// year
+			mth: 12,						// month
+			day: 30,						// day
+			win: get_timeWindow().value 	// time window
 		});
+		console.log('Fetching data:', params.toString());
 
-		if (response.ok) {
-			// const text = await response.text();
-			// console.log('Response:', text);
+		indexDB_setup(deviceId);
 
-			const buffer = await response.arrayBuffer();
-			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
-			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
-			const dataView = new DataView(buffer);
-			console.log('Response time:', Date.now() - startTime, 'ms');
+		try {
+			let startTime = Date.now();
+			const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
+				method: 'GET',
+			});
 
-			const sensorData = [];
-			const timeStampArr = [];
-			const tempArr = [];
-			const humArr = [];
-			const luxArr = [];
-			
-			startTime = Date.now();
+			if (response.ok) {
+				// const text = await response.text();
+				// console.log('Response:', text);
 
-			for (let i = 0; i < recordCount; i++) {
-				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
-				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
-				const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
-				const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
-				
-				timeStampArr.push(timestamp);
-				tempArr.push(temperature);
-				humArr.push(humidity);
-				luxArr.push(lux);
+				const buffer = await response.arrayBuffer();
+				const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
+				const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
+				const dataView = new DataView(buffer);
+				console.log('Response time:', Date.now() - startTime, 'ms');
 
-				// sensorData.push({
-				// 	timestamp: timestamp,
-				// 	temp: temperature,
-				// 	hum: humidity,
-				// 	lux: lux
-				// });
+				const sensorData = [];
+				const timeStampArr = [];
+				const tempArr = [];
+				const humArr = [];
+				const luxArr = [];
+
+				for (let i = 0; i < recordCount; i++) {
+					const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
+					const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
+					const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
+					const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
+					
+					timeStampArr.push(timestamp);
+					tempArr.push(temperature);
+					humArr.push(humidity);
+					luxArr.push(lux);
+
+					// sensorData.push({
+					// 	timestamp: timestamp,
+					// 	temp: temperature,
+					// 	hum: humidity,
+					// 	lux: lux
+					// });
+				}
+
+				// console.log('Sensor data:', sensorData);
+				console.log('count:', recordCount);
+				charts[i].setData([timeStampArr, tempArr, humArr, luxArr]);
+				timeWindow_apply();
+			} else {
+				throw new Error(`HTTP ${response.status}`);
 			}
-
-			// console.log('Sensor data:', sensorData);
-			console.log('count:', recordCount);
-			// console.log('Process time:', Date.now() - startTime, 'ms');
-			sensorChart2.setData([timeStampArr, tempArr, humArr, luxArr]);
-			timeWindow_apply();
-		} else {
-			throw new Error(`HTTP ${response.status}`);
-		}
-	} catch (error) {
-		console.error('Connection error:', error);
+		} catch (error) {
+			console.error('Connection error:', error);
+		}	
 	}
-}
-
-// Fetch live data from ESP32
-async function fetchLiveData() {
-	const serverIp = document.getElementById('serverIp').value.trim();
-	if (!serverIp) return;
-	
-	try {
-		// In a real app, you'd have an endpoint like /sensor-data
-		// For now, we'll simulate data
-		const now = Date.now() / 1000; // Current time in seconds
-		const value = 50 + 30 * Math.sin(now * 0.1) + 10 * Math.random();
-		
-		// Add to data points
-		dataPoints.push({
-			timestamp: now,
-			value: value
-		});
-		
-		// Limit data points
-		if (dataPoints.length > maxPoints) {
-			dataPoints.shift();
-		}
-		
-		// Update charts
-		updateCharts();
-		
-		// Update UI
-		document.getElementById('freeMemory').textContent = Math.floor(value * 1000) + ' bytes';
-		
-		// Update live data feed
-		const liveDataDiv = document.getElementById('liveData');
-		const timeStr = new Date(now * 1000).toLocaleTimeString('en-US', {
-			hour12: true,
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit'
-		});
-		liveDataDiv.textContent = `Time: ${timeStr}\nValue: ${value.toFixed(2)}\n\n` + liveDataDiv.textContent;
-		
-		// Keep only last 10 lines
-		const lines = liveDataDiv.textContent.split('\n').slice(0, 10);
-		liveDataDiv.textContent = lines.join('\n');
-		
-	} catch (error) {
-		console.error('Fetch error:', error);
-	}
-}
-
-// Update both charts
-function updateCharts() {
-	if (dataPoints.length === 0) return;
-	
-	// Prepare data for sensor chart
-	const timestamps = dataPoints.map(p => p.timestamp);
-	const values = dataPoints.map(p => p.value);
-	
-	// Update sensor chart
-	sensorChart.setData([timestamps, values]);
-}
-
-// Start live data updates
-function startLiveData() {
-	if (liveDataInterval) {
-		clearInterval(liveDataInterval);
-	}
-	
-	liveDataInterval = setInterval(fetchLiveData, updateInterval);
-	console.log('Live data started, interval:', updateInterval, 'ms');
-}
-
-// Stop live data
-function stopLiveData() {
-	if (liveDataInterval) {
-		clearInterval(liveDataInterval);
-		liveDataInterval = null;
-		console.log('Live data stopped');
-	}
-}
-
-// Update refresh rate
-function updateRate(seconds) {
-	updateInterval = seconds * 1000;
-	document.getElementById('updateRate').textContent = seconds;
-	
-	if (liveDataInterval) {
-		startLiveData(); // Restart with new interval
-	}
-}
-
-// Clear all charts
-function clearCharts() {
-	dataPoints = [];
-	updateCharts();
-	document.getElementById('liveData').textContent = 'Data cleared';
 }
 
 
