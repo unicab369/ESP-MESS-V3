@@ -9,8 +9,8 @@ let indexDB = null;
 let chartIds = ['aabbccdd', 'aabbccda'];
 let charts = [];
 
-function get_timeWindow() {
-	return document.getElementById('timeWindow');
+function get_timeWindow(chart_id) {
+	return document.getElementById(`timeWindow-${ chart_id }`);
 }
 
 // Initialize charts
@@ -20,11 +20,11 @@ function initCharts() {
 	for (const chart_id of chartIds) {
 		output +=  /*html*/
 			`<div class="chart-card">
-				<div class="chart-title">📈 Node: ${ chart_id }</div>
+				<div class="chart-title">📈 Node: ${ chart_id.toUpperCase() }</div>
 				
 				<div class="chart-controls">
-					<label for="timeWindow">Time Window:</label>
-					<select id="timeWindow" onchange="timeWindow_apply()">
+					<label for="timeWindow-${ chart_id }">Time Window:</label>
+					<select id="timeWindow-${ chart_id }" onchange="timeWindow_apply('${chart_id}')">
 						<option value="1">1 minute</option>
 						<option value="5" selected>5 minutes</option>
 						<option value="20">20 minutes</option>
@@ -39,7 +39,7 @@ function initCharts() {
 						<option value="259200">6 months</option>
 						<option value="0">All data</option>
 					</select>
-					<button class="btn" onclick="timeWindow_reset()">Reset</button>
+					<button class="btn" onclick="timeWindow_reset('${chart_id}')">Reset</button>
 
 					<label for="updateWindow">Update Window:</label>
 					<select id="updateWindow" onchange="updateWindow_apply()">
@@ -179,18 +179,18 @@ async function reloadData(dateStr = null) {
 	}
 
 	for (let i=0; i<charts.length; i++) {
-		let deviceId = 'aabbccdd';
+		let deviceId = chartIds[i];
+		// let deviceId = 'aabbccdd';
 
 		const params = new URLSearchParams({
 			dev: deviceId,					// device
 			yr: 2025,						// year
 			mth: 12,						// month
 			day: 30,						// day
-			win: get_timeWindow().value 	// time window
+			win: get_timeWindow(deviceId).value 	// time window
 		});
 		console.log('Fetching data:', params.toString());
-
-		indexDB_setup(deviceId);
+		// indexDB_setup(deviceId);
 
 		try {
 			let startTime = Date.now();
@@ -236,7 +236,7 @@ async function reloadData(dateStr = null) {
 				// console.log('Sensor data:', sensorData);
 				console.log('count:', recordCount);
 				charts[i].setData([timeStampArr, tempArr, humArr, luxArr]);
-				timeWindow_apply();
+				timeWindow_apply(deviceId);
 			} else {
 				throw new Error(`HTTP ${response.status}`);
 			}
@@ -249,11 +249,12 @@ async function reloadData(dateStr = null) {
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function timeWindow_apply() {
-	const minutes = parseInt(get_timeWindow().value);
-	if (!sensorChart2) return;
+function timeWindow_apply(chart_id) {
+	const minutes = parseInt(get_timeWindow(chart_id).value);
+	let index = chartIds.indexOf(chart_id);
+	if (index < 0) return;
 	
-	const timestamps = sensorChart2.data[0];
+	const timestamps = charts[index].data[0];
 	if (timestamps.length === 0) return;
 	
 	let xMin, xMax;
@@ -270,13 +271,13 @@ function timeWindow_apply() {
 	}
 	
 	// Apply zoom
-	sensorChart2.setScale('x', { min: xMin, max: xMax });
+	charts[index].setScale('x', { min: xMin, max: xMax });
 }
 
 // Reset to show all data
-function timeWindow_reset() {
+function timeWindow_reset(chart_id) {
 	reloadData();
-	get_timeWindow().value = '1';
+	get_timeWindow(chart_id).value = '1';
 }
 
 function getTodayDate(separator = '') {

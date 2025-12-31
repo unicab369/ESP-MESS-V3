@@ -105,7 +105,6 @@ void app_main(void) {
 	};
 
 	ret = mod_spi_init(&spi_conf0, 20E6);
-	uint8_t uuid[4] = {0xAA, 0xBB, 0xCC, 0xDD};
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
@@ -122,7 +121,12 @@ void app_main(void) {
 			ESP_LOGE(TAG_SD, "Failed to create /log");
 		}
 
-		memcpy(ref[0].uuid, uuid, sizeof(uuid));
+		uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+		memcpy(ref[0].uuid, uuid1, sizeof(uuid1));
+
+		uint8_t uuid2[4] = {0xAA, 0xBB, 0xCC, 0xDA};
+		memcpy(ref[1].uuid, uuid2, sizeof(uuid2));
+
 		// write_file_test();
 	}
 
@@ -145,8 +149,14 @@ void app_main(void) {
 				.value2 = random_int(70, 80),
 				.value3 = random_int(0, 100),
 			};
+			uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+			sd_bin_record_all(uuid1, &timeinfo, &records);
 
-			sd_bin_record_all(uuid, &timeinfo, &records);
+			records.value1 = random_int(20, 30);
+			records.value2 = random_int(70, 80);
+			records.value3 = random_int(0, 100);
+			uint8_t uuid2[4] = {0xAA, 0xBB, 0xCC, 0xDA};
+			sd_bin_record_all(uuid2, &timeinfo, &records);
 		}
 
 		wifi_poll();
