@@ -476,7 +476,7 @@ typedef struct {
 typedef struct {
 	uint32_t uuid;
 	uint32_t timeRef;
-	uint8_t enabled;
+	uint32_t config;
 	uint8_t count;			// aggregated count
 	int16_t sum1;
 	int16_t sum2;

@@ -208,7 +208,8 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 }
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req);
-esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -250,12 +251,21 @@ static httpd_handle_t start_webserver(void) {
 		httpd_register_uri_handler(server, &info_uri);
 
 		httpd_uri_t config_uri = {
-			.uri	  = "/config",
+			.uri	  = "/g_config",
 			.method   = HTTP_GET,
-			.handler  = HTTP_CONFIG_HANDLER,
+			.handler  = HTTP_GET_CONFIG_HANDLER,
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &config_uri);
+
+		httpd_uri_t save_config_uri = {
+			.uri	  = "/s_config",
+			.method   = HTTP_GET,
+			.handler  = HTTP_SAVE_CONFIG_HANDLER,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &save_config_uri);
+
 
 		httpd_uri_t get_data_uri = {
 			.uri	  = "/data",

@@ -26,7 +26,38 @@ int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
 }
 
-esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
+	char query[128];
+	char device_id[9] = {0};
+	char config_str[16] = {0};
+
+	// Set response headers
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+    if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));
+		httpd_query_key_value(query, "cfg", config_str, sizeof(config_str));
+	}
+
+	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+
+	// Validate parameters
+	if (uuid < 1) {
+		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
+		return ESP_OK;
+	}
+	
+	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
+	printf("Device: %s, Config: %ld\n", device_id, config);
+
+	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	char query[128];
 
 	// Set response headers
@@ -37,34 +68,30 @@ esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req) {
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
     if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-
 	}
 
-	char response[512];
-	char hex_str[9] = {0};
-	char *ptr = response;
-	*ptr++ = '[';
-
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
-		if (recs->uuid == 0 || recs->enabled == 0) continue;
-		snprintf(hex_str, sizeof(hex_str), "%08lX", recs->uuid);
-
-		if (i > 0) *ptr++ = ',';
-		*ptr++ = '"';
-		
-		// Manual string copy - no format parsing
-		const char *src = hex_str;
-		while (*src) *ptr++ = *src++;
-		
-		*ptr++ = '"';
-	}
-
-	*ptr++ = ']';
-	*ptr = '\0';
-
-	httpd_resp_set_type(req, "application/json");
-	return httpd_resp_send(req, response, ptr - response);
+    static char response[1024];
+    char *ptr = response;
+    int count = 0;
+    *ptr++ = '[';
+    
+    for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+        record_aggregate_t *recs = &RECORD_AGGREGATE[i];
+        if (recs->uuid == 0 || recs->config == 0) continue;
+        if (count > 0) *ptr++ = ',';
+        
+        // Minimal snprintf for inner array only
+        ptr += snprintf(ptr, sizeof(response) - (ptr - response),
+                    "[\"%08lX\",%ld]", recs->uuid, recs->config);
+        if (ptr - response >= sizeof(response) - 64) break;
+        count++;
+    }
+    
+    *ptr++ = ']';
+    *ptr = '\0';
+    
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, response, ptr - response);
 }
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
@@ -96,11 +123,11 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		timeWindow = atoi(win);
     }
 
-    // Validate parameters
-    if (year < 0 || (month < 0 && day < 0)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
-        return ESP_OK;
-    }
+	// Validate parameters
+	if (year < 0 || (month < 0 && day < 0)) {
+		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
+		return ESP_OK;
+	}
     ESP_LOGW(TAG_HTTP, "Request device: %s, yr: %s, mth: %s, day: %s, window: %d", 
 		device_id, year, month, day, timeWindow);
 
@@ -213,7 +240,12 @@ void app_main(void) {
 			for (int i=0; i<5; i++) {
 				uuid += i;
 				RECORD_AGGREGATE[i].uuid = uuid;
-				RECORD_AGGREGATE[i].enabled = i < 3;
+
+				if (i<3) {
+					RECORD_AGGREGATE[i].config = 1E9;
+					RECORD_AGGREGATE[i].config += 2;
+					RECORD_AGGREGATE[i].config += 200;
+				}
 			}
 		}
 	}

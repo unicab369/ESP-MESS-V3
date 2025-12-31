@@ -26,7 +26,7 @@
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
-				<button class="btn" onclick="esp_loadConfig()">Load Config</button>
+				<button class="btn" onclick="esp_saveConfig()">Save Config</button>
 			</div>
 		</div>
 
@@ -63,17 +63,15 @@
 			})
 			
 			try {
-				const resp = await fetch(`http://${serverIp}/config?${params.toString()}`, {
+				// Load config
+				const resp = await fetch(`http://${serverIp}/g_config?${params.toString()}`, {
 					method: 'GET',
 				})
 
-				console.log("Response received. Status:", resp.status, resp.statusText);
-				console.log("Response OK?:", resp.ok);
-
 				if (resp.ok) {
-					const names = await resp.json()
-					console.log('Names:', names)
-					initCharts(names)
+					const json = await resp.json()
+					console.log('Configs:', json)
+					initCharts(json)
 				} else {
 					const errorText = await resp.text()
 					console.error('Server error:', errorText)

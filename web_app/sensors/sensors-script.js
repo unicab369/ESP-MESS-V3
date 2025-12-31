@@ -1,10 +1,16 @@
-// Global variables
-let sensorChart2 = null;
-let liveDataInterval = null;
-let updateInterval = 1000; // 1 second
-let dataPoints = [];
-let maxPoints = 100;
 let indexDB = null;
+let chartObjs = {};
+
+// let chartObjs = {
+// 	'aabbccdd': {
+// 		plot: null,
+// 		scheduler: null,
+// 		config: {
+// 			time_window_idx: 0,
+// 			update_window_idx: 1
+// 		}
+// 	},
+// };
 
 let appConfig = {
 	'time_window_default_idx': 1,
@@ -17,59 +23,40 @@ let appConfig = {
 	'update_window_strs': ['1 second', '2 seconds', '5 seconds', '10 seconds', '30 seconds', 'Pause']
 }
 
-let chartObjs = {};
-
-// let chartObjs = {
-// 	'aabbccdd': {
-// 		plot: null,
-// 		scheduler: null,
-// 		config: {
-// 			time_window_idx: 0,
-// 			update_window_idx: 1
-// 		}
-// 	},
-// 	'aabbccda': {
-// 		plot: null,
-// 		scheduler: null,
-// 		config: {
-// 			time_window_idx: 3,
-// 			update_window_idx: 2
-// 		}
-// 	},
-// 	'aabbccdb': {
-// 		plot: null,
-// 		scheduler: null,
-// 		config: {
-// 			time_window_idx: 4,
-// 			update_window_idx: 2
-// 		}
-// 	}
-// };
-
 function get_timeWindow(chart_id) {
 	return document.getElementById(`timeWindow-${ chart_id }`);
 }
 
+function get_updateWindow(chart_id) {
+	return document.getElementById(`updateWindow-${ chart_id }`);
+}
+
+
 function make_options(default_idx, option_strs, option_values) {
-	const selected_idx = default_idx ?? 0;
+	// clamp and validate value
+	let selected_idx = default_idx ?? 0
+	selected_idx = Math.min(selected_idx, option_strs.length - 1)
 
 	return option_strs.map((str, idx) => {
 		return `<option value="${option_values[idx]}"
 					${idx === selected_idx ? 'selected' : ''}>
 					${str}
-				</option>`;
-	}).join('');
+				</option>`
+	}).join('')
 }
 
 // Initialize charts
-function initCharts(names) {
+// Response format: [["AABBCCDD", uint32_t], ["11223344", uint32_t], ...]
+function initCharts(arrays) {
 	chartObjs = {}
 	let output = ``
 
-	for (const chart_id of names) {
+	for (const values of arrays) {
+		const chart_id = values[0]
+
 		chartObjs[chart_id] = {}
-		chartObjs[chart_id].time_window_idx = 1
-		chartObjs[chart_id].update_window_idx = 2
+		chartObjs[chart_id].time_window_idx = Math.floor(values[1] / Math.pow(10, 2)) % 100;	// 3rd and 4th digits from right
+		chartObjs[chart_id].update_window_idx = Math.floor(values[1] / Math.pow(10, 0)) % 100;	// last 2 digits
 		chartObjs[chart_id].scheduler = null
 
 		output +=  /*html*/
@@ -78,7 +65,7 @@ function initCharts(names) {
 				
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
-					<select id="timeWindow-${ chart_id }" onchange="timeWindow_apply('${chart_id}')">
+					<select id="timeWindow-${ chart_id }" onchange="set_timeWindow('${chart_id}'); esp_saveConfig('${chart_id}')">
 						${ make_options(
 							chartObjs[chart_id].time_window_idx ?? appConfig.time_window_default_idx,
 							appConfig.time_window_strs,
@@ -88,7 +75,7 @@ function initCharts(names) {
 					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
 					<label for="updateWindow-${ chart_id }">Update Window:</label>
-					<select id="updateWindow-${ chart_id }" onchange="updateWindow_apply('${chart_id}')">
+					<select id="updateWindow-${ chart_id }" onchange="set_updateWindow('${chart_id}'); esp_saveConfig('${chart_id}')">
 						${ make_options(
 							chartObjs[chart_id].update_window_idx ?? appConfig.update_window_default_idx,
 							appConfig.update_window_strs,
@@ -107,7 +94,9 @@ function initCharts(names) {
 
 	document.getElementById('charts-container').innerHTML = output
 
-	for (const chart_id of names) {
+	for (const values of arrays) {
+		const chart_id = values[0]
+
 		const chartOptions = {
 			width: document.getElementById(`chart-${chart_id}`).offsetWidth,
 			height: 250,
@@ -185,7 +174,7 @@ function initCharts(names) {
 		};
 
 		chartObjs[chart_id].plot = new uPlot(chartOptions, [], document.getElementById(`chart-${chart_id}`))
-		updateWindow_apply(chart_id);
+		set_updateWindow(chart_id);
 	}
 }
 
@@ -220,40 +209,47 @@ async function connectToServer() {
 	}
 }
 
-async function esp_saveConfig() {
+async function esp_saveConfig(chart_id) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
 
+	let config = 1000000101	// Default value (5 minutes, 2 seconds)
+
+	const timeWindow = appConfig.time_window_mins.indexOf(Number(get_timeWindow(chart_id).value))
+	const updateWindow = appConfig.update_window_ms.indexOf(Number(get_updateWindow(chart_id).value))
+	console.log('timeWindow*:', timeWindow, 'updateWindow*:', updateWindow)
+
+	if (timeWindow > -1 && timeWindow < appConfig.time_window_mins.length &&
+		updateWindow > -1 && updateWindow < appConfig.update_window_ms.length) {
+		config = 1E9 + timeWindow + updateWindow*100
+	}
+
+	const params = new URLSearchParams({
+		dev: chart_id,
+		cfg: config					
+	});
+	console.log('Fetching config:', params.toString());
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
+			method: 'GET',
+		})
+
+		if (resp.ok) {
+			const text = await resp.text()
+			console.log('save request:', text)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
 }
 
-// async function esp_loadConfig() {
-// 	const serverIp = get_serverIp()
-// 	if (!serverIp) return
-
-// 	const params = new URLSearchParams({
-// 		current: Date.now()
-// 	})
-	
-// 	try {
-// 		const resp = await fetch(`http://${serverIp}/config?${params.toString()}`, {
-// 			method: 'GET',
-// 		})
-
-// 		console.log("Response received. Status:", resp.status, resp.statusText);
-// 		console.log("Response OK?:", resp.ok);
-
-// 		if (resp.ok) {
-// 			const names = await resp.json()
-// 			console.log('Names:', names)
-// 		} else {
-// 			const errorText = await resp.text()
-// 			console.error('Server error:', errorText)
-// 		}
-// 	}
-// 	catch(error) {
-// 		console.error('Connection error:', error)
-// 	}
-// }
-
-async function reloadData(chart_id) {
+async function esp_reloadData(chart_id) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
@@ -311,7 +307,7 @@ async function reloadData(chart_id) {
 			// console.log('Sensor data:', sensorData);
 			console.log('count:', recordCount)
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
-			timeWindow_apply(chart_id)
+			set_timeWindow(chart_id)
 		} else {
 			const errorText = await resp.text()
 			console.error('Server error:', errorText)
@@ -328,7 +324,7 @@ async function reloadData(chart_id) {
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function timeWindow_apply(chart_id) {
+function set_timeWindow(chart_id) {
 	const timestamps = chartObjs[chart_id].plot.data[0];
 	if (timestamps.length === 0) return;
 	
@@ -361,22 +357,19 @@ function getTodayDate(separator = '') {
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function updateWindow_apply(chart_id) {
-	const select = document.getElementById(`updateWindow-${ chart_id }`);
-	const value = parseInt(select.value);
-	if (value <= 0) return;
+function set_updateWindow(chart_id) {
+	const value = parseInt(get_updateWindow(chart_id).value)
+	if (value <= 0) return
 
-	console.log('Update window:', value);
-
-	// clear scheduler
+	//! IMPORTANT: clear scheduler
 	clearInterval(chartObjs[chart_id].scheduler)
 
 	// Update immediately once
-	reloadData(chart_id);
+	esp_reloadData(chart_id);
 	
 	// Set up interval
 	chartObjs[chart_id].scheduler = setInterval(() => {
-		reloadData(chart_id);
+		esp_reloadData(chart_id);
 	}, value);
 }
 
