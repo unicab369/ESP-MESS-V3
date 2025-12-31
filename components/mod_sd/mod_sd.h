@@ -507,12 +507,11 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 #define LOG_RECORD_COUNT 10
 record_ref ref[LOG_RECORD_COUNT] = {0};
-uint8_t target_empty[4] = {0};
 char file_path[64];
 
-// STEP1: 2025/latest.bin - 1 hour of record every second (3600 records)
-// STEP2: 2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
-// STEP3: 2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
+// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
+// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
+// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
@@ -523,7 +522,7 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 	time_t now = time(NULL);
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		if (memcmp(ref[i].uuid, target_empty, sizeof(target_empty)) == 0) break;
+		if (memcmp(ref[i].uuid, uuid, 4) != 0) continue;
 
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X", 

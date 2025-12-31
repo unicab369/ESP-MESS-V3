@@ -44,21 +44,17 @@
 	<script>		
 		// Handle window resize
 		window.addEventListener('resize', function() {
-			for (let i = 0; i < charts.length; i++) {
-				charts[i].setSize({
+			Object.values(chartPlots).forEach(chart => {
+				chart.setSize({
 					width: document.getElementById(`charts-container`).offsetWidth - 30,
 					height: 250
 				});
-			}
+			})
 		});
 		
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', function() {
 			initCharts();
-
-			let todayDate = getTodayDate();
-			// reloadData(todayDate);
-			updateWindow_apply();
 			
 			// // Auto-connect if IP is set
 			// const ipInput = document.getElementById('serverIp');

@@ -7,7 +7,17 @@ let maxPoints = 100;
 let indexDB = null;
 
 let chartIds = ['aabbccdd', 'aabbccda'];
-let charts = [];
+
+let chartObjs = {
+	'aabbccdd': {
+		plot: null,
+		scheduler: null
+	},
+	'aabbccda': {
+		plot: null,
+		scheduler: null
+	}
+};
 
 function get_timeWindow(chart_id) {
 	return document.getElementById(`timeWindow-${ chart_id }`);
@@ -39,17 +49,17 @@ function initCharts() {
 						<option value="259200">6 months</option>
 						<option value="0">All data</option>
 					</select>
-					<button class="btn" onclick="timeWindow_reset('${chart_id}')">Reset</button>
+					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
-					<label for="updateWindow">Update Window:</label>
-					<select id="updateWindow" onchange="updateWindow_apply()">
+					<label for="updateWindow-${ chart_id }">Update Window:</label>
+					<select id="updateWindow-${ chart_id }" onchange="updateWindow_apply('${chart_id}')">
 						<option value="1000">1 second</option>
 						<option value="2000" selected>2 seconds</option>
 						<option value="5000">5 seconds</option>
 						<option value="10000">10 seconds</option>
 						<option value="30000">30 seconds</option>
 					</select>
-					<button class="btn" onclick="updateWindow_pause()">Pause</button>
+					<button class="btn" onclick="clearInterval(chartObjs['${chart_id}'].scheduler)">Pause</button>
 				</div>
 
 				<div class="chart-wrapper">
@@ -138,9 +148,9 @@ function initCharts() {
 			]
 		};
 
-		charts.push(new uPlot(chartOptions, [], document.getElementById(`chart-${chart_id}`)))
+		chartObjs[chart_id].plot = new uPlot(chartOptions, [], document.getElementById(`chart-${chart_id}`))
+		updateWindow_apply(chart_id);
 	}
-
 }
 
 // Connect to ESP32 server
@@ -171,78 +181,73 @@ async function connectToServer() {
 }
 
 
-async function reloadData(dateStr = null) {
+async function reloadData(chart_id) {
 	const serverIp = document.getElementById('serverIp').value.trim();
 	if (!serverIp) {
 		alert('Please enter ESP32 IP address');
 		return;
 	}
 
-	for (let i=0; i<charts.length; i++) {
-		let deviceId = chartIds[i];
-		// let deviceId = 'aabbccdd';
+	const params = new URLSearchParams({
+		dev: chart_id,					// device
+		yr: 2025,						// year
+		mth: 12,						// month
+		day: 30,						// day
+		win: get_timeWindow(chart_id).value 	// time window
+	});
+	console.log('Fetching data:', params.toString());
+	// indexDB_setup(chart_id);
 
-		const params = new URLSearchParams({
-			dev: deviceId,					// device
-			yr: 2025,						// year
-			mth: 12,						// month
-			day: 30,						// day
-			win: get_timeWindow(deviceId).value 	// time window
+	try {
+		let startTime = Date.now();
+		const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
+			method: 'GET',
 		});
-		console.log('Fetching data:', params.toString());
-		// indexDB_setup(deviceId);
 
-		try {
-			let startTime = Date.now();
-			const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
-				method: 'GET',
-			});
+		if (response.ok) {
+			// const text = await response.text();
+			// console.log('Response:', text);
 
-			if (response.ok) {
-				// const text = await response.text();
-				// console.log('Response:', text);
+			const buffer = await response.arrayBuffer();
+			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
+			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
+			const dataView = new DataView(buffer);
+			console.log('Response time:', Date.now() - startTime, 'ms');
 
-				const buffer = await response.arrayBuffer();
-				const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
-				const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
-				const dataView = new DataView(buffer);
-				console.log('Response time:', Date.now() - startTime, 'ms');
+			const sensorData = [];
+			const timeStampArr = [];
+			const tempArr = [];
+			const humArr = [];
+			const luxArr = [];
 
-				const sensorData = [];
-				const timeStampArr = [];
-				const tempArr = [];
-				const humArr = [];
-				const luxArr = [];
+			for (let i = 0; i < recordCount; i++) {
+				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
+				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
+				const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
+				const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
+				
+				timeStampArr.push(timestamp);
+				tempArr.push(temperature);
+				humArr.push(humidity);
+				luxArr.push(lux);
 
-				for (let i = 0; i < recordCount; i++) {
-					const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
-					const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
-					const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
-					const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
-					
-					timeStampArr.push(timestamp);
-					tempArr.push(temperature);
-					humArr.push(humidity);
-					luxArr.push(lux);
-
-					// sensorData.push({
-					// 	timestamp: timestamp,
-					// 	temp: temperature,
-					// 	hum: humidity,
-					// 	lux: lux
-					// });
-				}
-
-				// console.log('Sensor data:', sensorData);
-				console.log('count:', recordCount);
-				charts[i].setData([timeStampArr, tempArr, humArr, luxArr]);
-				timeWindow_apply(deviceId);
-			} else {
-				throw new Error(`HTTP ${response.status}`);
+				// sensorData.push({
+				// 	timestamp: timestamp,
+				// 	temp: temperature,
+				// 	hum: humidity,
+				// 	lux: lux
+				// });
 			}
-		} catch (error) {
-			console.error('Connection error:', error);
-		}	
+
+			// console.log('Sensor data:', sensorData);
+			console.log('count:', recordCount);
+			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr]);
+			timeWindow_apply(chart_id);
+		} else {
+			throw new Error(`HTTP ${response.status}`);
+		}
+	} catch (error) {
+		console.error('Connection error:', error);
 	}
 }
 
@@ -250,15 +255,12 @@ async function reloadData(dateStr = null) {
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 function timeWindow_apply(chart_id) {
-	const minutes = parseInt(get_timeWindow(chart_id).value);
-	let index = chartIds.indexOf(chart_id);
-	if (index < 0) return;
-	
-	const timestamps = charts[index].data[0];
+	const timestamps = chartObjs[chart_id].plot.data[0];
 	if (timestamps.length === 0) return;
 	
 	let xMin, xMax;
-	
+	const minutes = parseInt(get_timeWindow(chart_id).value);
+
 	if (minutes === 0) {
 		// Show all data
 		xMin = Math.min(...timestamps);
@@ -271,13 +273,7 @@ function timeWindow_apply(chart_id) {
 	}
 	
 	// Apply zoom
-	charts[index].setScale('x', { min: xMin, max: xMax });
-}
-
-// Reset to show all data
-function timeWindow_reset(chart_id) {
-	reloadData();
-	get_timeWindow(chart_id).value = '1';
+	chartObjs[chart_id].plot.setScale('x', { min: xMin, max: xMax });
 }
 
 function getTodayDate(separator = '') {
@@ -290,35 +286,24 @@ function getTodayDate(separator = '') {
 
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-let chartUpdateTimer = null;
-let isChartPaused = false;
 
-function updateWindow_pause() {
-	clearInterval(chartUpdateTimer);
-	chartUpdateTimer = null;
-}
-
-// Apply update interval
-function updateWindow_apply() {
-	const select = document.getElementById('updateWindow');
+function updateWindow_apply(chart_id) {
+	const select = document.getElementById(`updateWindow-${ chart_id }`);
 	const value = parseInt(select.value);
+	if (value <= 0) return;
 
-	// Clear existing timer
-	if (chartUpdateTimer) {
-		clearInterval(chartUpdateTimer);
-		chartUpdateTimer = null;
-	}
+	console.log('Update window:', value);
+
+	// clear scheduler
+	clearInterval(chartObjs[chart_id].scheduler)
+
+	// Update immediately once
+	reloadData(chart_id);
 	
-	// Start new timer if not "Manual only"
-	if (value > 0) {
-		// Update immediately once
-		reloadData();
-		
-		// Set up interval
-		chartUpdateTimer = setInterval(() => {
-			reloadData();
-		}, value);
-	}
+	// Set up interval
+	chartObjs[chart_id].scheduler = setInterval(() => {
+		reloadData(chart_id);
+	}, value);
 }
 
 
