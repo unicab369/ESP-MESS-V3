@@ -17,32 +17,34 @@ let appConfig = {
 	'update_window_strs': ['1 second', '2 seconds', '5 seconds', '10 seconds', '30 seconds', 'Pause']
 }
 
-let chartObjs = {
-	'aabbccdd': {
-		plot: null,
-		scheduler: null,
-		config: {
-			time_window_idx: 1,
-			update_window_idx: 2
-		}
-	},
-	'aabbccda': {
-		plot: null,
-		scheduler: null,
-		config: {
-			time_window_idx: 1,
-			update_window_idx: 2
-		}
-	},
-	'aabbccdb': {
-		plot: null,
-		scheduler: null,
-		config: {
-			time_window_idx: 1,
-			update_window_idx: 2
-		}
-	}
-};
+let chartObjs = {};
+
+// let chartObjs = {
+// 	'aabbccdd': {
+// 		plot: null,
+// 		scheduler: null,
+// 		config: {
+// 			time_window_idx: 0,
+// 			update_window_idx: 1
+// 		}
+// 	},
+// 	'aabbccda': {
+// 		plot: null,
+// 		scheduler: null,
+// 		config: {
+// 			time_window_idx: 3,
+// 			update_window_idx: 2
+// 		}
+// 	},
+// 	'aabbccdb': {
+// 		plot: null,
+// 		scheduler: null,
+// 		config: {
+// 			time_window_idx: 4,
+// 			update_window_idx: 2
+// 		}
+// 	}
+// };
 
 function get_timeWindow(chart_id) {
 	return document.getElementById(`timeWindow-${ chart_id }`);
@@ -60,10 +62,16 @@ function make_options(default_idx, option_strs, option_values) {
 }
 
 // Initialize charts
-function initCharts() {
+function initCharts(names) {
+	chartObjs = {}
 	let output = ``
 
-	for (const chart_id of Object.keys(chartObjs)) {
+	for (const chart_id of names) {
+		chartObjs[chart_id] = {}
+		chartObjs[chart_id].time_window_idx = 1
+		chartObjs[chart_id].update_window_idx = 2
+		chartObjs[chart_id].scheduler = null
+
 		output +=  /*html*/
 			`<div class="chart-card">
 				<div class="chart-title">📈 Node: ${ chart_id.toUpperCase() }</div>
@@ -71,13 +79,21 @@ function initCharts() {
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
 					<select id="timeWindow-${ chart_id }" onchange="timeWindow_apply('${chart_id}')">
-						${ make_options(appConfig.time_window_default_idx, appConfig.time_window_strs, appConfig.time_window_mins) }
+						${ make_options(
+							chartObjs[chart_id].time_window_idx ?? appConfig.time_window_default_idx,
+							appConfig.time_window_strs,
+							appConfig.time_window_mins
+						) }
 					</select>
 					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
 					<label for="updateWindow-${ chart_id }">Update Window:</label>
 					<select id="updateWindow-${ chart_id }" onchange="updateWindow_apply('${chart_id}')">
-						${ make_options(appConfig.update_window_default_idx, appConfig.update_window_strs, appConfig.update_window_ms) }
+						${ make_options(
+							chartObjs[chart_id].update_window_idx ?? appConfig.update_window_default_idx,
+							appConfig.update_window_strs,
+							appConfig.update_window_ms
+						) }
 					</select>
 					<button class="btn" onclick="clearInterval(chartObjs['${chart_id}'].scheduler)">Pause</button>
 				</div>
@@ -91,7 +107,7 @@ function initCharts() {
 
 	document.getElementById('charts-container').innerHTML = output
 
-	for (const chart_id of Object.keys(chartObjs)) {
+	for (const chart_id of names) {
 		const chartOptions = {
 			width: document.getElementById(`chart-${chart_id}`).offsetWidth,
 			height: 250,
@@ -173,40 +189,73 @@ function initCharts() {
 	}
 }
 
+function get_serverIp() {
+	const serverIp = document.getElementById('serverIp').value.trim()
+	if (serverIp.length > 0) return serverIp
+	alert('Please enter ESP32 IP address')
+	return null
+}
+
 // Connect to ESP32 server
 async function connectToServer() {
-	const serverIp = document.getElementById('serverIp').value.trim();
-	if (!serverIp) {
-		alert('Please enter ESP32 IP address');
-		return;
-	}
-	
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
 	try {
 		// Test connection
-		const response = await fetch(`http://${serverIp}/info`, { method: 'GET' });
+		const response = await fetch(`http://${serverIp}/info`, { method: 'GET' })
 		if (response.ok) {
-			const data = await response.json();
-			document.getElementById('espIp').textContent = data.ip_address;
-			document.getElementById('freeMemory').textContent = data.heap_free + ' bytes';
-			console.log('Connected to:', data);
+			const data = await response.json()
+			document.getElementById('espIp').textContent = data.ip_address
+			document.getElementById('freeMemory').textContent = data.heap_free + ' bytes'
+			console.log('Connected to:', data)
 			
 			// Start live data
-			startLiveData();
+			startLiveData()
 		} else {
-			throw new Error(`HTTP ${response.status}`);
+			throw new Error(`HTTP ${response.status}`)
 		}
 	} catch (error) {
-		console.error('Connection error:', error);
+		console.error('Connection error:', error)
 	}
 }
 
+async function esp_saveConfig() {
+
+}
+
+// async function esp_loadConfig() {
+// 	const serverIp = get_serverIp()
+// 	if (!serverIp) return
+
+// 	const params = new URLSearchParams({
+// 		current: Date.now()
+// 	})
+	
+// 	try {
+// 		const resp = await fetch(`http://${serverIp}/config?${params.toString()}`, {
+// 			method: 'GET',
+// 		})
+
+// 		console.log("Response received. Status:", resp.status, resp.statusText);
+// 		console.log("Response OK?:", resp.ok);
+
+// 		if (resp.ok) {
+// 			const names = await resp.json()
+// 			console.log('Names:', names)
+// 		} else {
+// 			const errorText = await resp.text()
+// 			console.error('Server error:', errorText)
+// 		}
+// 	}
+// 	catch(error) {
+// 		console.error('Connection error:', error)
+// 	}
+// }
 
 async function reloadData(chart_id) {
-	const serverIp = document.getElementById('serverIp').value.trim();
-	if (!serverIp) {
-		alert('Please enter ESP32 IP address');
-		return;
-	}
+	const serverIp = get_serverIp()
+	if (!serverIp) return
 
 	const params = new URLSearchParams({
 		dev: chart_id,					// device
@@ -220,19 +269,19 @@ async function reloadData(chart_id) {
 
 	try {
 		let startTime = Date.now();
-		const response = await fetch(`http://${serverIp}/data?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/data?${params.toString()}`, {
 			method: 'GET',
-		});
+		})
 
-		if (response.ok) {
-			// const text = await response.text();
-			// console.log('Response:', text);
+		if (resp.ok) {
+			// const text = await resp.text()
+			// console.log('Response:', text)
 
-			const buffer = await response.arrayBuffer();
+			const buffer = await resp.arrayBuffer()
 			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
-			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE);
-			const dataView = new DataView(buffer);
-			console.log('Response time:', Date.now() - startTime, 'ms');
+			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
+			const dataView = new DataView(buffer)
+			console.log('Response time:', Date.now() - startTime, 'ms')
 
 			const sensorData = [];
 			const timeStampArr = [];
@@ -264,12 +313,12 @@ async function reloadData(chart_id) {
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
 			timeWindow_apply(chart_id)
 		} else {
-			const errorText = await response.text()
-            console.error('Server error:', errorText)
-			console.log("STOP SCHEDULER")
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+			console.log("STOP SCHEDULER. char_id:", chart_id)
 			// Stop scheduler
 			clearInterval(chartObjs[chart_id].scheduler)
-			// throw new Error(`HTTP ${response.status}`)
+			// throw new Error(`HTTP ${resp.status}`)
 		}
 	} catch (error) {
 		console.error('Connection error:', error);

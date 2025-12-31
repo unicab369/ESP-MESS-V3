@@ -28,7 +28,43 @@ int random_int(int min, int max) {
 
 esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req) {
 	char query[128];
-	return ESP_OK;
+
+	// Set response headers
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+    if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+
+	}
+
+	char response[512];
+	char hex_str[9] = {0};
+	char *ptr = response;
+	*ptr++ = '[';
+
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
+		if (recs->uuid == 0 || recs->enabled == 0) continue;
+		snprintf(hex_str, sizeof(hex_str), "%08lX", recs->uuid);
+
+		if (i > 0) *ptr++ = ',';
+		*ptr++ = '"';
+		
+		// Manual string copy - no format parsing
+		const char *src = hex_str;
+		while (*src) *ptr++ = *src++;
+		
+		*ptr++ = '"';
+	}
+
+	*ptr++ = ']';
+	*ptr = '\0';
+
+	httpd_resp_set_type(req, "application/json");
+	return httpd_resp_send(req, response, ptr - response);
 }
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
@@ -48,10 +84,10 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
-	size_t qlen = httpd_req_get_url_query_len(req) + 1;
-	if (qlen > sizeof(query)) qlen = sizeof(query);
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
 
-    if (httpd_req_get_url_query_str(req, query, qlen) == ESP_OK) {
+    if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
         httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
 		httpd_query_key_value(query, "yr", year, sizeof(year));
 		httpd_query_key_value(query, "mth", month, sizeof(month));
@@ -73,7 +109,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	int found_and_validated = 0;
 
 	for (int i=0; i < LOG_RECORD_COUNT; i++) {
-		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].count > 0) {
+		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].timeRef > 0) {
 			found_and_validated = 1;
 			break;
 		}
@@ -118,9 +154,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	ESP_LOGW(TAG, "path %s: %d Bytes", path, total_bytes);
 	
 	// End chunked response
-	httpd_resp_send_chunk(req, NULL, 0);
-
-	return ESP_OK;
+	return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 
@@ -179,6 +213,7 @@ void app_main(void) {
 			for (int i=0; i<5; i++) {
 				uuid += i;
 				RECORD_AGGREGATE[i].uuid = uuid;
+				RECORD_AGGREGATE[i].enabled = i < 3;
 			}
 		}
 	}

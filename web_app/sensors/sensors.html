@@ -26,6 +26,7 @@
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
+				<button class="btn" onclick="esp_loadConfig()">Load Config</button>
 			</div>
 		</div>
 
@@ -53,8 +54,34 @@
 		});
 		
 		// Initialize on page load
-		window.addEventListener('DOMContentLoaded', function() {
-			initCharts();
+		window.addEventListener('DOMContentLoaded', async function() {
+			const serverIp = get_serverIp()
+			if (!serverIp) return
+
+			const params = new URLSearchParams({
+				current: Date.now()
+			})
+			
+			try {
+				const resp = await fetch(`http://${serverIp}/config?${params.toString()}`, {
+					method: 'GET',
+				})
+
+				console.log("Response received. Status:", resp.status, resp.statusText);
+				console.log("Response OK?:", resp.ok);
+
+				if (resp.ok) {
+					const names = await resp.json()
+					console.log('Names:', names)
+					initCharts(names)
+				} else {
+					const errorText = await resp.text()
+					console.error('Server error:', errorText)
+				}
+			}
+			catch(error) {
+				console.error('Connection error:', error)
+			}
 			
 			// // Auto-connect if IP is set
 			// const ipInput = document.getElementById('serverIp');
