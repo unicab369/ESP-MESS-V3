@@ -20,6 +20,22 @@
 #define MOUNT_POINT "/sdcard"
 #define LOG_FILE_UPDATE_INTERVAL 1800			// 1800 seconds OR 30 minutes
 
+uint32_t hex_to_uint32_unrolled(const char *hex_str) {
+    uint32_t result = 0;
+    
+    // Process each character individually (no loop overhead)
+    result = ((hex_str[0] <= '9' ? hex_str[0] - '0' : (hex_str[0] & 0x0F) + 9) << 28) |
+			((hex_str[1] <= '9' ? hex_str[1] - '0' : (hex_str[1] & 0x0F) + 9) << 24) |
+			((hex_str[2] <= '9' ? hex_str[2] - '0' : (hex_str[2] & 0x0F) + 9) << 20) |
+			((hex_str[3] <= '9' ? hex_str[3] - '0' : (hex_str[3] & 0x0F) + 9) << 16) |
+			((hex_str[4] <= '9' ? hex_str[4] - '0' : (hex_str[4] & 0x0F) + 9) << 12) |
+			((hex_str[5] <= '9' ? hex_str[5] - '0' : (hex_str[5] & 0x0F) + 9) << 8) |
+			((hex_str[6] <= '9' ? hex_str[6] - '0' : (hex_str[6] & 0x0F) + 9) << 4) |
+			((hex_str[7] <= '9' ? hex_str[7] - '0' : (hex_str[7] & 0x0F) + 9));
+    
+    return result;
+}
+
 static const char *TAG_SD = "[SD]";
 
 static FILE *file;
@@ -576,36 +592,6 @@ static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
 			recs->sum3 = 0;
 		}
 	}
-}
-
-static void sd_bin_fetch(
-	const char *path, uint32_t device_id,
-	esp_err_t (*on_fRead)(char *buffer, size_t len), void (*on_Error)(void)
-) {	
-	FILE* _file = fopen(path, "rb");
-	if (_file == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading");
-        on_Error();
-		return;
-	}
-
-	// Stream file content in chunks
-	char buffer[1024];
-	size_t bytes_read;
-	size_t total_bytes = 0;
-
-	while ((bytes_read = fread(buffer, 1, sizeof(buffer), _file)) > 0) {
-        esp_err_t err = on_fRead(buffer, bytes_read);
-
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG_SD, "Error sending chunk: %d", err);
-            fclose(_file);
-            return;
-        }
-		total_bytes += bytes_read;
-	}
-	fclose(_file);
-	ESP_LOGW(TAG_SD, "fetched path %s: %d Bytes", path, total_bytes);
 }
 
 // Function to read and verify binary data

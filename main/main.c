@@ -37,12 +37,16 @@ esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req) {
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	char query[128];
-    char device_id[32] = {0};
+    char device_id[9] = {0};
 	char year[5] = {0};
 	char month[3] = {0};
 	char day[3] = {0};
 	char win[8] = {0};
 	int timeWindow = 0;
+
+	// Set response headers
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
 	size_t qlen = httpd_req_get_url_query_len(req) + 1;
 	if (qlen > sizeof(query)) qlen = sizeof(query);
@@ -64,16 +68,29 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
     ESP_LOGW(TAG_HTTP, "Request device: %s, yr: %s, mth: %s, day: %s, window: %d", 
 		device_id, year, month, day, timeWindow);
 
+	// Check if device is valid
+	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+	int found_and_validated = 0;
+
+	for (int i=0; i < LOG_RECORD_COUNT; i++) {
+		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].count > 0) {
+			found_and_validated = 1;
+			break;
+		}
+	}
+
+	if (!found_and_validated) {
+		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing Data");
+		return ESP_OK;
+	}
+
+	// Fetch data from SD card
 	char path[64];
 	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
 	} else {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
 	}
-
-	// Set response headers
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
 	FILE* _file = fopen(path, "rb");
 	if (_file == NULL) {
@@ -158,14 +175,10 @@ void app_main(void) {
 				ESP_LOGE(TAG_SD, "Failed to create /log");
 			}
 
-			// uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDA};
 			uint32_t uuid = 0xAABBCCDA;
-
 			for (int i=0; i<5; i++) {
 				uuid += i;
 				RECORD_AGGREGATE[i].uuid = uuid;
-				// uuid1[3] = 0xDA + i;
-				// memcpy(RECORD_AGGREGATE[i].uuid, uuid1, sizeof(uuid1));
 			}
 		}
 	}
@@ -179,8 +192,6 @@ void app_main(void) {
 		if (timeinfo.tm_year > 70) {
 			// year number starts at 1900, epoch year is 1970
 			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
-
-			uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDA};
 			uint32_t uuid = 0xAABBCCDA;
 
 			for (int i=0; i<5; i++) {
@@ -194,7 +205,6 @@ void app_main(void) {
 					.value3 = random_int(0, 100),
 				};
 
-				// uuid1[3] = 0xDA + i;
 				uuid += i;
 				sd_bin_record_all(uuid, &timeinfo, &records);
 			}

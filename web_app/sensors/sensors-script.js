@@ -260,11 +260,16 @@ async function reloadData(chart_id) {
 			}
 
 			// console.log('Sensor data:', sensorData);
-			console.log('count:', recordCount);
-			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr]);
-			timeWindow_apply(chart_id);
+			console.log('count:', recordCount)
+			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
+			timeWindow_apply(chart_id)
 		} else {
-			throw new Error(`HTTP ${response.status}`);
+			const errorText = await response.text()
+            console.error('Server error:', errorText)
+			console.log("STOP SCHEDULER")
+			// Stop scheduler
+			clearInterval(chartObjs[chart_id].scheduler)
+			// throw new Error(`HTTP ${response.status}`)
 		}
 	} catch (error) {
 		console.error('Connection error:', error);
