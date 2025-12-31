@@ -44,10 +44,10 @@
 	<script>		
 		// Handle window resize
 		window.addEventListener('resize', function() {
-			Object.values(chartPlots).forEach(chart => {
-				chart.setSize({
+			Object.values(chartObjs).forEach(chart => {
+				chart.plot.setSize({
 					width: document.getElementById(`charts-container`).offsetWidth - 30,
-					height: 250
+					height: 200
 				});
 			})
 		});

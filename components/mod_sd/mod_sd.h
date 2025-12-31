@@ -89,29 +89,29 @@ esp_err_t sd_get(const char *path, char *buff, size_t len) {
 static sdmmc_card_t *card;
 static esp_err_t ret;
 
-static void check_sd_card(esp_err_t ret) {
-	if (ret != ESP_OK) {
-		if (ret == ESP_FAIL) {
-			ESP_LOGE(TAG_SD, "Failed to mount filesystem. "
-					"Format the card if needed before use.");
-		} else {
-			ESP_LOGE(TAG_SD, "Failed to initialize the card (%s). "
-					"Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
-			#ifdef CONFIG_EXAMPLE_DEBUG_PIN_CONNECTIONS
-				check_sd_card_pins(&config, pin_count);
-			#endif
-		}
-
-		return;
+static esp_err_t check_sd_card(esp_err_t ret) {
+	if (ret == ESP_OK) {
+		//# Card has been initialized, print its properties
+		ESP_LOGI(TAG_SD, "Filesystem mounted");
+		sdmmc_card_print_info(stdout, card);
+		return ret;
 	}
 
+	if (ret == ESP_FAIL) {
+		ESP_LOGE(TAG_SD, "Failed to mount filesystem. "
+				"Format the card if needed before use.");
+	} else {
+		ESP_LOGE(TAG_SD, "Failed to initialize the card (%s). "
+				"Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
+		#ifdef CONFIG_EXAMPLE_DEBUG_PIN_CONNECTIONS
+			check_sd_card_pins(&config, pin_count);
+		#endif
+	}
 
-	//# Card has been initialized, print its properties
-	ESP_LOGI(TAG_SD, "Filesystem mounted");
-	sdmmc_card_print_info(stdout, card);
+	return ret;
 }
 
-void sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
+esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 	ESP_LOGI(TAG_SD, "Initializing SD card. Using SPI peripheral");
 
 	// For SoCs where the SD power can be supplied both via an internal or external (e.g. on-board LDO) power supply.
@@ -150,7 +150,7 @@ void sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 
 	//# Mounting SD card
 	ret = esp_vfs_fat_sdspi_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
-	check_sd_card(ret);
+	return check_sd_card(ret);
 }
 
 

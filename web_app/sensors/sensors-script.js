@@ -6,16 +6,41 @@ let dataPoints = [];
 let maxPoints = 100;
 let indexDB = null;
 
-let chartIds = ['aabbccdd', 'aabbccda'];
+let appConfig = {
+	'time_window_default_idx': 1,
+	'time_window_mins': [1, 5, 20, 60, 300, 720, 1440, 4320, 10080, 43200, 129600, 259200, 0],
+	'time_window_strs': ['1 minute', '5 minutes', '20 minutes', '1 hour', '5 hours', '12 hours',
+						'1 day', '3 days', '1 week', '1 month', '3 months', '6 months', '0 (all)'],
+
+	'update_window_default_idx': 1,
+	'update_window_ms': [1000, 2000, 5000, 10000, 30000, 0],
+	'update_window_strs': ['1 second', '2 seconds', '5 seconds', '10 seconds', '30 seconds', 'Pause']
+}
 
 let chartObjs = {
 	'aabbccdd': {
 		plot: null,
-		scheduler: null
+		scheduler: null,
+		config: {
+			time_window_idx: 1,
+			update_window_idx: 2
+		}
 	},
 	'aabbccda': {
 		plot: null,
-		scheduler: null
+		scheduler: null,
+		config: {
+			time_window_idx: 1,
+			update_window_idx: 2
+		}
+	},
+	'aabbccdb': {
+		plot: null,
+		scheduler: null,
+		config: {
+			time_window_idx: 1,
+			update_window_idx: 2
+		}
 	}
 };
 
@@ -27,7 +52,7 @@ function get_timeWindow(chart_id) {
 function initCharts() {
 	let output = ``
 
-	for (const chart_id of chartIds) {
+	for (const chart_id of Object.keys(chartObjs)) {
 		output +=  /*html*/
 			`<div class="chart-card">
 				<div class="chart-title">📈 Node: ${ chart_id.toUpperCase() }</div>
@@ -35,29 +60,27 @@ function initCharts() {
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
 					<select id="timeWindow-${ chart_id }" onchange="timeWindow_apply('${chart_id}')">
-						<option value="1">1 minute</option>
-						<option value="5" selected>5 minutes</option>
-						<option value="20">20 minutes</option>
-						<option value="60">1 hour</option>
-						<option value="300">5 hours</option>
-						<option value="720">12 hours</option>
-						<option value="1440">1 day</option>
-						<option value="4320">3 days</option>
-						<option value="10080">7 days</option>
-						<option value="43200">1 month</option>
-						<option value="129600">3 months</option>
-						<option value="259200">6 months</option>
-						<option value="0">All data</option>
+						${
+							appConfig.time_window_strs.map((str, idx) => {
+								if (idx === appConfig.time_window_default_idx) {
+									return `<option value="${ appConfig.time_window_mins[idx] }" selected>${ str }</option>`
+								}
+								return `<option value="${ appConfig.time_window_mins[idx] }">${ str }</option>`
+							}).join('')
+						}
 					</select>
 					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
 					<label for="updateWindow-${ chart_id }">Update Window:</label>
 					<select id="updateWindow-${ chart_id }" onchange="updateWindow_apply('${chart_id}')">
-						<option value="1000">1 second</option>
-						<option value="2000" selected>2 seconds</option>
-						<option value="5000">5 seconds</option>
-						<option value="10000">10 seconds</option>
-						<option value="30000">30 seconds</option>
+						${
+							appConfig.update_window_strs.map((str, idx) => {
+								if (idx === appConfig.update_window_default_idx) {
+									return `<option value="${ appConfig.update_window_ms[idx] }" selected>${ str }</option>`
+								}
+								return `<option value="${ appConfig.update_window_ms[idx] }">${ str }</option>`
+							}).join('')
+						}
 					</select>
 					<button class="btn" onclick="clearInterval(chartObjs['${chart_id}'].scheduler)">Pause</button>
 				</div>
@@ -71,7 +94,7 @@ function initCharts() {
 
 	document.getElementById('charts-container').innerHTML = output
 
-	for (const chart_id of chartIds) {
+	for (const chart_id of Object.keys(chartObjs)) {
 		const chartOptions = {
 			width: document.getElementById(`chart-${chart_id}`).offsetWidth,
 			height: 250,
@@ -192,7 +215,7 @@ async function reloadData(chart_id) {
 		dev: chart_id,					// device
 		yr: 2025,						// year
 		mth: 12,						// month
-		day: 30,						// day
+		day: 31,						// day
 		win: get_timeWindow(chart_id).value 	// time window
 	});
 	console.log('Fetching data:', params.toString());

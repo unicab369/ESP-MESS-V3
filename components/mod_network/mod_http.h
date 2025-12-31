@@ -207,40 +207,8 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 	return ESP_OK;
 }
 
-esp_err_t HTTP_SD_DATA_STREAM(httpd_req_t *req, const char* device, 
-							const char *year, const char *month, const char* day, int timeWindow);
-
-static esp_err_t get_data_handler2(httpd_req_t *req) {
-	char query[128];
-    char device[32] = {0};
-	char year[5] = {0};
-	char month[3] = {0};
-	char day[3] = {0};
-	char win[8] = {0};
-	int timeWindow = 0;
-
-	size_t qlen = httpd_req_get_url_query_len(req) + 1;
-	if (qlen > sizeof(query)) qlen = sizeof(query);
-
-    if (httpd_req_get_url_query_str(req, query, qlen) == ESP_OK) {
-        httpd_query_key_value(query, "dev", device, sizeof(device));        
-		httpd_query_key_value(query, "yr", year, sizeof(year));
-		httpd_query_key_value(query, "mth", month, sizeof(month));
-		httpd_query_key_value(query, "day", day, sizeof(day));
-		httpd_query_key_value(query, "win", win, sizeof(win));
-		timeWindow = atoi(win);
-    }
-
-    // Validate parameters
-    if (year < 0 || (month < 0 && day < 0)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG_HTTP, "Request device: %s, yr: %s, mth: %s, day: %s, window: %d", 
-		device, year, month, day, timeWindow);
-	return HTTP_SD_DATA_STREAM(req, device, year, month, day, timeWindow);
-}
+esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_CONFIG_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -281,10 +249,18 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &info_uri);
 
+		httpd_uri_t config_uri = {
+			.uri	  = "/config",
+			.method   = HTTP_GET,
+			.handler  = HTTP_CONFIG_HANDLER,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &config_uri);
+
 		httpd_uri_t get_data_uri = {
 			.uri	  = "/data",
 			.method   = HTTP_GET,
-			.handler  = get_data_handler2,
+			.handler  = HTTP_DATA_HANDLER,
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &get_data_uri);

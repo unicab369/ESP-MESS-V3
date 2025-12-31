@@ -46,7 +46,7 @@ h1 {
 
 .chart-card {
 	background: white;
-	padding: 20px 20px 20px 20px;
+	padding: 20px 20px 0px 20px;
 	border-radius: 15px;
 	margin-bottom: 20px;
 	overflow: hidden;  /* ← FIXES OVERFLOW */
