@@ -458,7 +458,7 @@ typedef struct {
 } __attribute__((packed)) record_t;
 
 typedef struct {
-	uint8_t uuid[4];
+	uint32_t uuid;
 	uint32_t timeRef;
 	int8_t count;			// aggregated count
 	int16_t sum1;
@@ -506,14 +506,14 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 
 #define LOG_RECORD_COUNT 10
-record_aggregate_t record_agrregate[LOG_RECORD_COUNT] = {0};
+record_aggregate_t RECORD_AGGREGATE[LOG_RECORD_COUNT] = {0};
 char file_path[64];
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
-static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
+static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
 	int year = tm->tm_year + 1900;
 	int month = tm->tm_mon + 1;
@@ -522,32 +522,25 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 	time_t now = time(NULL);
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		record_aggregate_t *recs = &record_agrregate[i];
-		if (memcmp(recs->uuid, uuid, 4) != 0) continue;
+		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
+		if (recs->uuid != uuid) continue;
 
 		//# /log/<uuid>
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X", 
-			uuid[0], uuid[1], uuid[2], uuid[3]
-		);
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE(TAG_SD, "Failed to create /<uuid>");
 			continue;
 		}
 
 		//# /log/<uuid>/2025
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d", 
-			uuid[0], uuid[1], uuid[2], uuid[3], year
-		);
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE(TAG_SD, "Failed to create /<uuid>/year");
 			continue;
 		}
 
 		uint32_t time_dif = now - recs->timeRef;
-
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d/latest.bin", 
-			uuid[0], uuid[1], uuid[2], uuid[3], year
-		);
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/latest.bin", uuid, year);
 
 		//# replace 1 hour of records for every second (3600 records)
 		if (recs->timeRef == 0 || time_dif > 3600) {
@@ -572,8 +565,8 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 			};
 
 			//# STEP2: `/log/<uuid>/2025/1230.bin`
-			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d/%d%d.bin", 
-				uuid[0], uuid[1], uuid[2], uuid[3], year, month, day
+			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%d%d.bin", 
+				uuid, year, month, day
 			);
 			sd_append_bin(file_path, record, sizeof(record_t));
 
@@ -583,6 +576,36 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 			recs->sum3 = 0;
 		}
 	}
+}
+
+static void sd_bin_fetch(
+	const char *path, uint32_t device_id,
+	esp_err_t (*on_fRead)(char *buffer, size_t len), void (*on_Error)(void)
+) {	
+	FILE* _file = fopen(path, "rb");
+	if (_file == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for reading");
+        on_Error();
+		return;
+	}
+
+	// Stream file content in chunks
+	char buffer[1024];
+	size_t bytes_read;
+	size_t total_bytes = 0;
+
+	while ((bytes_read = fread(buffer, 1, sizeof(buffer), _file)) > 0) {
+        esp_err_t err = on_fRead(buffer, bytes_read);
+
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_SD, "Error sending chunk: %d", err);
+            fclose(_file);
+            return;
+        }
+		total_bytes += bytes_read;
+	}
+	fclose(_file);
+	ESP_LOGW(TAG_SD, "fetched path %s: %d Bytes", path, total_bytes);
 }
 
 // Function to read and verify binary data

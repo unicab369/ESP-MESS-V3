@@ -48,6 +48,17 @@ function get_timeWindow(chart_id) {
 	return document.getElementById(`timeWindow-${ chart_id }`);
 }
 
+function make_options(default_idx, option_strs, option_values) {
+	const selected_idx = default_idx ?? 0;
+
+	return option_strs.map((str, idx) => {
+		return `<option value="${option_values[idx]}"
+					${idx === selected_idx ? 'selected' : ''}>
+					${str}
+				</option>`;
+	}).join('');
+}
+
 // Initialize charts
 function initCharts() {
 	let output = ``
@@ -60,27 +71,13 @@ function initCharts() {
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
 					<select id="timeWindow-${ chart_id }" onchange="timeWindow_apply('${chart_id}')">
-						${
-							appConfig.time_window_strs.map((str, idx) => {
-								if (idx === appConfig.time_window_default_idx) {
-									return `<option value="${ appConfig.time_window_mins[idx] }" selected>${ str }</option>`
-								}
-								return `<option value="${ appConfig.time_window_mins[idx] }">${ str }</option>`
-							}).join('')
-						}
+						${ make_options(appConfig.time_window_default_idx, appConfig.time_window_strs, appConfig.time_window_mins) }
 					</select>
 					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
 					<label for="updateWindow-${ chart_id }">Update Window:</label>
 					<select id="updateWindow-${ chart_id }" onchange="updateWindow_apply('${chart_id}')">
-						${
-							appConfig.update_window_strs.map((str, idx) => {
-								if (idx === appConfig.update_window_default_idx) {
-									return `<option value="${ appConfig.update_window_ms[idx] }" selected>${ str }</option>`
-								}
-								return `<option value="${ appConfig.update_window_ms[idx] }">${ str }</option>`
-							}).join('')
-						}
+						${ make_options(appConfig.update_window_default_idx, appConfig.update_window_strs, appConfig.update_window_ms) }
 					</select>
 					<button class="btn" onclick="clearInterval(chartObjs['${chart_id}'].scheduler)">Pause</button>
 				</div>

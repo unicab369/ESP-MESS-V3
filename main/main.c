@@ -71,6 +71,10 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
 	}
 
+	// Set response headers
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+
 	FILE* _file = fopen(path, "rb");
 	if (_file == NULL) {
 		ESP_LOGE(TAG, "Failed to open file for reading");
@@ -78,10 +82,6 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Data file not found");
 		return ESP_OK;
 	}
-
-    // Set response headers
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
 	// Stream file content in chunks
 	char buffer[1024];
@@ -158,13 +158,15 @@ void app_main(void) {
 				ESP_LOGE(TAG_SD, "Failed to create /log");
 			}
 
-			uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDA};
-			for (int i=0; i<5; i++) {
-				uuid1[3] = 0xDA + i;
-				memcpy(record_agrregate[i].uuid, uuid1, sizeof(uuid1));
-			}
+			// uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDA};
+			uint32_t uuid = 0xAABBCCDA;
 
-			// write_file_test();	
+			for (int i=0; i<5; i++) {
+				uuid += i;
+				RECORD_AGGREGATE[i].uuid = uuid;
+				// uuid1[3] = 0xDA + i;
+				// memcpy(RECORD_AGGREGATE[i].uuid, uuid1, sizeof(uuid1));
+			}
 		}
 	}
 
@@ -179,6 +181,7 @@ void app_main(void) {
 			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
 
 			uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDA};
+			uint32_t uuid = 0xAABBCCDA;
 
 			for (int i=0; i<5; i++) {
 				record_t records = {
@@ -191,43 +194,13 @@ void app_main(void) {
 					.value3 = random_int(0, 100),
 				};
 
-				uuid1[3] = 0xDA + i;
-				sd_bin_record_all(uuid1, &timeinfo, &records);
+				// uuid1[3] = 0xDA + i;
+				uuid += i;
+				sd_bin_record_all(uuid, &timeinfo, &records);
 			}
 		}
 
 		wifi_poll();
-		vTaskDelay(1000/portTICK_PERIOD_MS);
-	}
-}
-
-void write_file_test() {
-	int counter = 0;
-	uint8_t uuid[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-	memcpy(record_agrregate[0].uuid, uuid, 6);
-	record_agrregate[0].timeRef = 0;
-
-	struct tm timeinfo1 = {
-		.tm_year = 2025-1900,
-		.tm_mon = 12-1,
-		.tm_mday = 30,
-		.tm_hour = 0,
-		.tm_min = 0,
-		.tm_sec = 0,
-		.tm_isdst = -1,
-	};
-
-	record_t record1 = {
-		.timestamp = 1767122783,  // Fixed timestamp
-		.value1 = 10,
-		.value2 = 20,
-		.value3 = 30
-	};
-
-	while(1) {
-		counter++;
-		record1.timestamp += counter;
-		sd_bin_record_all(uuid, &timeinfo1, &record1);
 		vTaskDelay(1000/portTICK_PERIOD_MS);
 	}
 }
