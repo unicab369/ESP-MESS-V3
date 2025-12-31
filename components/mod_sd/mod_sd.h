@@ -464,7 +464,7 @@ typedef struct {
 	int16_t sum1;
 	int16_t sum2;
 	int16_t sum3;
-} record_ref;
+} record_aggregate_t;
 
 static void sd_bin_write(const char *uuid, const char *dateStr, record_t* records) {
 	char path[64];
@@ -506,7 +506,7 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 
 #define LOG_RECORD_COUNT 10
-record_ref ref[LOG_RECORD_COUNT] = {0};
+record_aggregate_t record_agrregate[LOG_RECORD_COUNT] = {0};
 char file_path[64];
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
@@ -522,7 +522,8 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 	time_t now = time(NULL);
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		if (memcmp(ref[i].uuid, uuid, 4) != 0) continue;
+		record_aggregate_t *recs = &record_agrregate[i];
+		if (memcmp(recs->uuid, uuid, 4) != 0) continue;
 
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X", 
@@ -542,32 +543,32 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 			continue;
 		}
 
-		uint32_t time_dif = now - ref[i].timeRef;
+		uint32_t time_dif = now - recs->timeRef;
 
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%02X%02X%02X%02X/%d/latest.bin", 
 			uuid[0], uuid[1], uuid[2], uuid[3], year
 		);
 
 		//# replace 1 hour of records for every second (3600 records)
-		if (ref[i].timeRef == 0 || time_dif > 3600) {
-			ref[i].timeRef = now;
+		if (recs->timeRef == 0 || time_dif > 3600) {
+			recs->timeRef = now;
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
 		}
 		else {
 			sd_append_bin(file_path, record, sizeof(record_t));
 		}
 
-		ref[i].count++;
-		ref[i].sum1 += record->value1;
-		ref[i].sum2 += record->value2;
-		ref[i].sum3 += record->value3;
+		recs->count++;
+		recs->sum1 += record->value1;
+		recs->sum2 += record->value2;
+		recs->sum3 += record->value3;
 
-		if (ref[i].count >= 60) {
+		if (recs->count >= 60) {
 			record_t minute_avg = {
 				.timestamp = record->timestamp,
-				.value1 = ref[i].sum1 / ref[i].count,
-				.value2 = ref[i].sum2 / ref[i].count,
-				.value3 = ref[i].sum3 / ref[i].count
+				.value1 = recs->sum1 / recs->count,
+				.value2 = recs->sum2 / recs->count,
+				.value3 = recs->sum3 / recs->count
 			};
 
 			//# STEP2: `/log/<uuid>/2025/1230.bin`
@@ -576,10 +577,10 @@ static void sd_bin_record_all(uint8_t *uuid, struct tm *tm, record_t* record) {
 			);
 			sd_append_bin(file_path, record, sizeof(record_t));
 
-			ref[i].count = 0;
-			ref[i].sum1 = 0;
-			ref[i].sum2 = 0;
-			ref[i].sum3 = 0;
+			recs->count = 0;
+			recs->sum1 = 0;
+			recs->sum2 = 0;
+			recs->sum3 = 0;
 		}
 	}
 }

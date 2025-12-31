@@ -122,10 +122,10 @@ void app_main(void) {
 		}
 
 		uint8_t uuid1[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-		memcpy(ref[0].uuid, uuid1, sizeof(uuid1));
+		memcpy(record_agrregate[0].uuid, uuid1, sizeof(uuid1));
 
 		uint8_t uuid2[4] = {0xAA, 0xBB, 0xCC, 0xDA};
-		memcpy(ref[1].uuid, uuid2, sizeof(uuid2));
+		memcpy(record_agrregate[1].uuid, uuid2, sizeof(uuid2));
 
 		// write_file_test();
 	}
@@ -167,8 +167,8 @@ void app_main(void) {
 void write_file_test() {
 	int counter = 0;
 	uint8_t uuid[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-	memcpy(ref[0].uuid, uuid, 6);
-	ref[0].timeRef = 0;
+	memcpy(record_agrregate[0].uuid, uuid, 6);
+	record_agrregate[0].timeRef = 0;
 
 	struct tm timeinfo1 = {
 		.tm_year = 2025-1900,
