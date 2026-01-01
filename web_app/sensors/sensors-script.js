@@ -203,9 +203,6 @@ async function connectToServer() {
 
 //! save charts configs
 async function esp_saveConfig(chart_id) {
-	const serverIp = get_serverIp()
-	if (!serverIp) return
-
 	scheduler.add(async () => {
 		let config = 1000000101	// Default value (5 minutes, 2 seconds)
 		const timeWindow = appConfig.time_window_mins.indexOf(Number(get_timeWindow(chart_id).value))
@@ -217,29 +214,30 @@ async function esp_saveConfig(chart_id) {
 			config = 1E9 + timeWindow + updateWindow*100
 		}
 
-		const params = new URLSearchParams({
-			dev: chart_id,
-			cfg: config					
-		});
-		console.log('Fetching config:', params.toString());
+		service_saveConfig(chart_id, config, null)
+		// const params = new URLSearchParams({
+		// 	dev: chart_id,
+		// 	cfg: config					
+		// });
+		// console.log('Fetching config:', params.toString());
 
-		try {
-			// Load config
-			const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
-				method: 'GET',
-			})
+		// try {
+		// 	// Load config
+		// 	const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
+		// 		method: 'GET',
+		// 	})
 
-			if (resp.ok) {
-				const text = await resp.text()
-				console.log('save request:', text)
-			} else {
-				const errorText = await resp.text()
-				console.error('Server error:', errorText)
-			}
-		}
-		catch(error) {
-			console.error('Connection error:', error)
-		}
+		// 	if (resp.ok) {
+		// 		const text = await resp.text()
+		// 		console.log('save request:', text)
+		// 	} else {
+		// 		const errorText = await resp.text()
+		// 		console.error('Server error:', errorText)
+		// 	}
+		// }
+		// catch(error) {
+		// 	console.error('Connection error:', error)
+		// }
 	})
 }
 

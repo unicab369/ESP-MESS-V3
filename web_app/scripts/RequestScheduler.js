@@ -32,10 +32,3 @@ class PriorityRequestScheduler {
 }
 
 const scheduler = new PriorityRequestScheduler(5);
-
-function get_serverIp() {
-	const serverIp = document.getElementById('serverIp').value.trim()
-	if (serverIp.length > 0) return serverIp
-	alert('Please enter ESP32 IP address')
-	return null
-}

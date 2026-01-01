@@ -26,6 +26,16 @@ int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
 }
 
+esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
+	// Set response headers
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "application/json");
+
+    char response[1024];
+	int response_len = make_device_configs_str(response, sizeof(response));
+    return httpd_resp_send(req, response, response_len);
+}
+
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
     httpd_resp_set_type(req, "application/json");
@@ -61,16 +71,6 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
     ptr += written;
     
     return httpd_resp_send(req, response, ptr - response);
-}
-
-esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
-	// Set response headers
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
-	httpd_resp_set_type(req, "application/json");
-
-    char response[1024];
-	int response_len = make_device_configs_str(response, sizeof(response));
-    return httpd_resp_send(req, response, response_len);
 }
 
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
@@ -281,6 +281,7 @@ void app_main(void) {
 				};
 
 				uuid += i;
+				cache_device(uuid, now);
 				sd_bin_record_all(uuid, now, &timeinfo, &records);
 			}
 		}

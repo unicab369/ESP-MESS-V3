@@ -531,11 +531,7 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 record_aggregate_t RECORD_AGGREGATE[LOG_RECORD_COUNT] = {0};
 device_cache_t DEVICE_CACHE[LOG_RECORD_COUNT] = {0};
 
-// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
-// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
-// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
-
-static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record) {
+static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		device_cache_t *target = &DEVICE_CACHE[i];
 		
@@ -553,7 +549,13 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 			break;
 		}
 	}
+}
 
+// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
+// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
+// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
+
+static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record) {
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
 	char file_path[64];
 	int year = tm->tm_year + 1900;
@@ -562,7 +564,8 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
-		if (target->uuid != uuid) continue;
+		//! filter for valid uuid and config
+		if (target->uuid != uuid || target->config == 0) continue;
 
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
@@ -629,10 +632,23 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
-		if (target->uuid == 0) break;
-		if (target->uuid == uuid) target->config = config;
-		fprintf(f, "%08lX %ld\n", target->uuid, target->config);
-		printf("saved: %08lX %ld\n", target->uuid, target->config);
+	
+		//# overwrite existing uuid's config
+		if (target->uuid == uuid) {
+			target->config = config;
+			fprintf(f, "%08lX %ld\n", target->uuid, target->config);
+			printf("saved: %08lX %ld\n", target->uuid, target->config);
+		}
+
+		if (target->uuid == 0) {
+			//! Assumption: First empty slot, the rest are uuid = 0
+			// UUID is new - add to empty slot and break loop
+			target->uuid = uuid;
+			target->config = config;		// default config
+			fprintf(f, "%08lX %ld\n", target->uuid, target->config);
+			printf("saved: %08lX %ld\n", target->uuid, target->config);
+			break;
+		}
 	}
 
 	fclose(f);
@@ -663,6 +679,7 @@ static esp_err_t sd_load_config() {
 		uint32_t config = strtoul(endptr + 1, &endptr, 10);		// base 10
 		if (*endptr != '\n' && *endptr != '\0') continue;
 		
+		//! filter for valid uuid and config
 		if (uuid == 0 || config == 0) continue;
 		record_aggregate_t *target = &RECORD_AGGREGATE[loaded];
 		target->uuid = uuid;
@@ -685,6 +702,8 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+
+		//! filter for valid uuid and config
 		if (target->uuid == 0 || target->config == 0) continue;
 		if (count > 0) *ptr++ = ',';
 		
