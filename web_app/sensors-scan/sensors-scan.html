@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>ESP32 Sensors Scanner</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="../lib/uplot/dist/uPlot.min.css">
+	<link rel="stylesheet" href="sensors-scan-style.css">
+</head>
+<body>
+	<div class="dashboard">
+		<div class="header">
+			<div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+				<a href="../sensors/sensors.html">
+					<button style="padding: 8px 12px; background: #f0f0f0; border: none; 
+									border-radius: 6px; cursor: pointer;">
+						← Back
+					</button>
+				</a>
+				<h1 style="margin: 0;"> 🔄 sensors Scanner</h1>
+			</div>
+
+			<p>Scan for sensors</p>
+			
+			<div class="status-bar">
+				<div class="status-item">
+					<div>ESP32 IP</div>
+					<div id="espIp">Connecting...</div>
+				</div>
+				<div class="status-item">
+					<div>Scan</div>
+					<div id="scan-count">---</div>
+				</div>
+			</div>
+			
+			<div class="input-group">
+				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
+				<button class="btn" onclick="connectToServer()">Connect</button>
+			</div>
+		</div>
+
+		<div id="charts-container" style="width: 100%;"></div>
+
+		<div class="chart-card">
+			<div class="chart-title">📋 Scan Results</div>
+			
+			<div style="margin-bottom: 15px; display: flex; gap: 10px;">
+				<button class="btn" onclick="startScan()">
+					🔍 Scan Now
+				</button>
+				<button onclick="clearDevices()" style="padding: 8px 15px; background: #f44336; 
+											color: white; border: none; border-radius: 6px; cursor: pointer;">
+					🗑️ Clear
+				</button>
+			</div>
+			
+			<div id="devicesList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; 
+									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
+				<div style="text-align: center; padding: 20px; color: #666;">
+					No devices found
+				</div>
+			</div>
+			
+			<div id="devInfo-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
+
+		</div>
+	</div>
+
+	<!-- scripts -->
+	<script src="../lib/RequestScheduler.js"></script>
+	<script>		
+		async function startScan() {
+			const serverIp = get_serverIp()
+			if (!serverIp) return
+
+			const params = new URLSearchParams({
+				dev: "aa"		
+			})
+
+			scheduler.add(async () => {
+				try {
+					// Load config
+					const resp = await fetch(`http://${serverIp}/scan?${params.toString()}`, {
+						method: 'GET'
+					})
+
+					if (resp.ok) {
+						const result = await resp.json()
+						console.log('%cresult:', 'color: red', result)
+						updateDeviceList(result)
+					} else {
+						const errorText = await resp.text()
+						console.error('Server error:', errorText)
+					}
+				}
+				catch(error) {
+					console.error('Connection error:', error)
+				}
+			})
+		}
+
+		let devices = []
+
+		function updateDeviceList(list) {
+			const devicesList = document.getElementById('devicesList');
+			const now = new Date();
+			
+			// Mark offline devices (older than 5 minutes)
+			const fiveMinutesAgo = Date.now() - 300000;
+
+			list.forEach(item => {
+				const lastSeen = new Date(item[1]*1000);
+
+				devices.push({
+					name: 'CH5xx',
+					id: item[0],
+					lastSeen: lastSeen,
+					status: lastSeen.getTime() < fiveMinutesAgo ? 'online' : 'offline'
+				})
+			})
+			
+			// Update UI
+			if (devices.length === 0) {
+				devicesList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No devices found</div>';
+			} else {
+				let html = '';
+				devices.forEach(device => {
+					const timeAgo = Math.round((Date.now() - device.lastSeen.getTime()) / 1000);
+					const statusColor = device.status === 'online' ? '#4CAF50' : '#f44336';
+					
+					html += /*html*/
+						`<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee;">
+							<div style="flex: 1;">
+								<div style="font-weight: bold;">${device.id}</div>
+								<div style="font-size: 0.8rem; color: #666;">
+									${device.name} • ${timeAgo}s ago
+								</div>
+							</div>
+							<div style="background: ${statusColor}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 0.8rem;">
+								${device.status}
+							</div>
+						</div>
+					`;
+				});
+				devicesList.innerHTML = html;
+			}
+			
+			// Update counters
+			const onlineCount = devices.filter(d => d.status === 'online').length;
+			document.getElementById('devInfo-container').innerHTML = /*html*/
+				`
+					<div>Total: <span id="deviceCount">${devices.length}</span></div>
+					<div>Online: <span id="onlineCount">${onlineCount}</span></div>
+					<div>Last: <span id="lastScan">${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
+				`
+		}
+
+		function clearDevices() {
+			if (devices.length > 0 && confirm('Clear all devices?')) {
+				devices = [];
+				updateDeviceList([]);
+			}
+		}
+	</script>
+</body>
+</html>

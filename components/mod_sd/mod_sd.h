@@ -475,13 +475,18 @@ typedef struct {
 
 typedef struct {
 	uint32_t uuid;
-	uint32_t timeRef;
+	uint32_t timestamp;
 	uint32_t config;
 	uint8_t count;			// aggregated count
 	int16_t sum1;
 	int16_t sum2;
 	int16_t sum3;
 } record_aggregate_t;
+
+typedef struct {
+	uint32_t uuid;
+	uint32_t timestamp;
+} device_cache_t;
 
 static void sd_bin_write(const char *uuid, const char *dateStr, record_t* records) {
 	char path[64];
@@ -524,19 +529,42 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 #define LOG_RECORD_COUNT 10
 record_aggregate_t RECORD_AGGREGATE[LOG_RECORD_COUNT] = {0};
+device_cache_t DEVICE_CACHE[LOG_RECORD_COUNT] = {0};
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
-static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
+static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record) {
+	int new_index = -1;
+
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		device_cache_t *cache = &DEVICE_CACHE[i];
+		
+		if (cache->uuid == uuid) {
+			// Found existing UUID
+			cache->timestamp = time_ref;
+			break;  // Done!
+		}
+		
+		// Assumption: First empty slot, the rest are uuid = 0
+		if (new_index == -1 && cache->uuid == 0) {
+			new_index = i;
+			break; 
+		}
+	}
+
+	// UUID is new - add to empty slot
+	if (new_index >= 0) {
+		DEVICE_CACHE[new_index].uuid = uuid;
+		DEVICE_CACHE[new_index].timestamp = time_ref;
+	}
+
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
 	char file_path[64];
 	int year = tm->tm_year + 1900;
 	int month = tm->tm_mon + 1;
 	int day = tm->tm_mday;
-
-	time_t now = time(NULL);
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
@@ -556,12 +584,12 @@ static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
 			continue;
 		}
 
-		uint32_t time_dif = now - recs->timeRef;
+		uint32_t time_dif = time_ref - recs->timestamp;
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/latest.bin", uuid, year);
 
 		//# replace 1 hour of records for every second (3600 records)
-		if (recs->timeRef == 0 || time_dif > 3600) {
-			recs->timeRef = now;
+		if (recs->timestamp == 0 || time_dif > 3600) {
+			recs->timestamp = time_ref;
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
 		}
 		else {

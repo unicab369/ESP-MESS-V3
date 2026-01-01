@@ -31,13 +31,6 @@ function get_updateWindow(chart_id) {
 	return document.getElementById(`updateWindow-${ chart_id }`);
 }
 
-function get_serverIp() {
-	const serverIp = document.getElementById('serverIp').value.trim()
-	if (serverIp.length > 0) return serverIp
-	alert('Please enter ESP32 IP address')
-	return null
-}
-
 function make_options(default_idx, option_strs, option_values) {
 	// clamp and validate value
 	let selected_idx = default_idx ?? 0

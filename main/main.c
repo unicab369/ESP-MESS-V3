@@ -26,6 +26,35 @@ int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
 }
 
+esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
+	// Set response headers
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "application/json");
+
+	static char response[1024];
+    char *ptr = response;
+    int count = 0;
+    *ptr++ = '[';
+    
+    for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+        device_cache_t *target = &DEVICE_CACHE[i];
+        if (target->uuid == 0) break;
+        if (count > 0) *ptr++ = ',';
+        
+        // Minimal snprintf for inner array only
+        ptr += snprintf(ptr, sizeof(response) - (ptr - response),
+                    "[\"%08lX\",%ld]", target->uuid, target->timestamp);
+        if (ptr - response >= sizeof(response) - 64) break;
+        count++;
+    }
+    
+    *ptr++ = ']';
+    *ptr = '\0';
+
+	printf("HTTP_SCAN_HANDLER: %d found\n", count);
+    return httpd_resp_send(req, response, ptr - response);
+}
+
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	char query[128];
 	char device_id[9] = {0};
@@ -141,7 +170,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	int found_and_validated = 0;
 
 	for (int i=0; i < LOG_RECORD_COUNT; i++) {
-		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].timeRef > 0) {
+		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].timestamp > 0) {
 			found_and_validated = 1;
 			break;
 		}
@@ -256,9 +285,11 @@ void app_main(void) {
 			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
 			uint32_t uuid = 0xAABBCCDA;
 
+			uint32_t now = (uint32_t)time_now();
+
 			for (int i=0; i<5; i++) {
 				record_t records = {
-					.timestamp = (u32_t)time_now(),  // Fixed timestamp
+					.timestamp = now,  // Fixed timestamp
 					// .value1 = 10,
 					// .value2 = 20,
 					// .value3 = 30
@@ -268,7 +299,7 @@ void app_main(void) {
 				};
 
 				uuid += i;
-				sd_bin_record_all(uuid, &timeinfo, &records);
+				sd_bin_record_all(uuid, now, &timeinfo, &records);
 			}
 		}
 

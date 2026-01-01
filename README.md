@@ -32,3 +32,13 @@ idf.py flash monitor -p COM4
 SD card folder name length is limited to 8 chars
 to extend this
 `idf.py menuconfig` > `Component Config` > `FAT Filesystem Suport` > `Long fileame support` > (prefer stack)
+
+
+## VSCode Extensions
+Better comments
+Back & Forth
+es6-string-html
+Live Server
+Serial Monitor
+WSL
+Power Mode
