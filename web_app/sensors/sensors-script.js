@@ -31,6 +31,12 @@ function get_updateWindow(chart_id) {
 	return document.getElementById(`updateWindow-${ chart_id }`);
 }
 
+function get_serverIp() {
+	const serverIp = document.getElementById('serverIp').value.trim()
+	if (serverIp.length > 0) return serverIp
+	alert('Please enter ESP32 IP address')
+	return null
+}
 
 function make_options(default_idx, option_strs, option_values) {
 	// clamp and validate value
@@ -45,7 +51,7 @@ function make_options(default_idx, option_strs, option_values) {
 	}).join('')
 }
 
-// Initialize charts
+//! Initialize charts
 // Response format: [["AABBCCDD", uint32_t], ["11223344", uint32_t], ...]
 function initCharts(arrays) {
 	chartObjs = {}
@@ -55,9 +61,9 @@ function initCharts(arrays) {
 		const chart_id = values[0]
 
 		chartObjs[chart_id] = {}
+		chartObjs[chart_id].scheduler = null
 		chartObjs[chart_id].time_window_idx = Math.floor(values[1] / Math.pow(10, 2)) % 100;	// 3rd and 4th digits from right
 		chartObjs[chart_id].update_window_idx = Math.floor(values[1] / Math.pow(10, 0)) % 100;	// last 2 digits
-		chartObjs[chart_id].scheduler = null
 
 		output +=  /*html*/
 			`<div class="chart-card">
@@ -178,13 +184,6 @@ function initCharts(arrays) {
 	}
 }
 
-function get_serverIp() {
-	const serverIp = document.getElementById('serverIp').value.trim()
-	if (serverIp.length > 0) return serverIp
-	alert('Please enter ESP32 IP address')
-	return null
-}
-
 // Connect to ESP32 server
 async function connectToServer() {
 	const serverIp = get_serverIp()
@@ -209,116 +208,110 @@ async function connectToServer() {
 	}
 }
 
+//! save charts configs
 async function esp_saveConfig(chart_id) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
-	let config = 1000000101	// Default value (5 minutes, 2 seconds)
+	scheduler.add(async () => {
+		let config = 1000000101	// Default value (5 minutes, 2 seconds)
+		const timeWindow = appConfig.time_window_mins.indexOf(Number(get_timeWindow(chart_id).value))
+		const updateWindow = appConfig.update_window_ms.indexOf(Number(get_updateWindow(chart_id).value))
+		console.log('%ctimeWindow:%d updateWindow:%d', 'color: red', timeWindow, updateWindow)
 
-	const timeWindow = appConfig.time_window_mins.indexOf(Number(get_timeWindow(chart_id).value))
-	const updateWindow = appConfig.update_window_ms.indexOf(Number(get_updateWindow(chart_id).value))
-	console.log('timeWindow*:', timeWindow, 'updateWindow*:', updateWindow)
-
-	if (timeWindow > -1 && timeWindow < appConfig.time_window_mins.length &&
-		updateWindow > -1 && updateWindow < appConfig.update_window_ms.length) {
-		config = 1E9 + timeWindow + updateWindow*100
-	}
-
-	const params = new URLSearchParams({
-		dev: chart_id,
-		cfg: config					
-	});
-	console.log('Fetching config:', params.toString());
-
-	try {
-		// Load config
-		const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
-			method: 'GET',
-		})
-
-		if (resp.ok) {
-			const text = await resp.text()
-			console.log('save request:', text)
-		} else {
-			const errorText = await resp.text()
-			console.error('Server error:', errorText)
+		if (timeWindow > -1 && timeWindow < appConfig.time_window_mins.length &&
+			updateWindow > -1 && updateWindow < appConfig.update_window_ms.length) {
+			config = 1E9 + timeWindow + updateWindow*100
 		}
-	}
-	catch(error) {
-		console.error('Connection error:', error)
-	}
+
+		const params = new URLSearchParams({
+			dev: chart_id,
+			cfg: config					
+		});
+		console.log('Fetching config:', params.toString());
+
+		try {
+			// Load config
+			const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
+				method: 'GET',
+			})
+
+			if (resp.ok) {
+				const text = await resp.text()
+				console.log('save request:', text)
+			} else {
+				const errorText = await resp.text()
+				console.error('Server error:', errorText)
+			}
+		}
+		catch(error) {
+			console.error('Connection error:', error)
+		}
+	})
 }
 
+//! reload charts data
 async function esp_reloadData(chart_id) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
-	const params = new URLSearchParams({
-		dev: chart_id,					// device
-		yr: 2025,						// year
-		mth: 12,						// month
-		day: 31,						// day
-		win: get_timeWindow(chart_id).value 	// time window
-	});
-	console.log('Fetching data:', params.toString());
-	// indexDB_setup(chart_id);
+	scheduler.add(async () => {
+		let startTime = Date.now()
 
-	try {
-		let startTime = Date.now();
-		const resp = await fetch(`http://${serverIp}/data?${params.toString()}`, {
-			method: 'GET',
+		const params = new URLSearchParams({
+			dev: chart_id,					// device
+			yr: 2025,						// year
+			mth: 12,						// month
+			day: 31,						// day
+			win: get_timeWindow(chart_id).value 	// time window
 		})
+		console.log('Fetching data:', params.toString())
+		// indexDB_setup(chart_id)
 
-		if (resp.ok) {
-			// const text = await resp.text()
-			// console.log('Response:', text)
+		try {
+			const resp = await fetch(`http://${serverIp}/data?${params.toString()}`, {
+				method: 'GET'
+			})
+
+			if (!resp.ok) {
+				const errorText = await resp.text()
+				console.error('Server error:', errorText)
+				console.log("STOP SCHEDULER. chart_id:", chart_id)
+				clearInterval(chartObjs[chart_id].scheduler)
+				throw new Error(`HTTP ${resp.status}: ${errorText}`)
+			}
 
 			const buffer = await resp.arrayBuffer()
-			const RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
+			const RECORD_SIZE = 10
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
 			console.log('Response time:', Date.now() - startTime, 'ms')
 
-			const sensorData = [];
-			const timeStampArr = [];
-			const tempArr = [];
-			const humArr = [];
-			const luxArr = [];
+			const timeStampArr = new Array(recordCount)
+			const tempArr = new Array(recordCount)
+			const humArr = new Array(recordCount)
+			const luxArr = new Array(recordCount)
 
+			// Pre-allocate arrays
 			for (let i = 0; i < recordCount; i++) {
-				const timestamp = dataView.getUint32(i * RECORD_SIZE, true);		// 4 bytes
-				const temperature = dataView.getUint16(i * RECORD_SIZE + 4, true);	// 2 bytes
-				const humidity = dataView.getInt16(i * RECORD_SIZE + 6, true);		// 2 bytes
-				const lux = dataView.getUint16(i * RECORD_SIZE + 8, true);			// 2 bytes
-				
-				timeStampArr.push(timestamp);
-				tempArr.push(temperature);
-				humArr.push(humidity);
-				luxArr.push(lux);
-
-				// sensorData.push({
-				// 	timestamp: timestamp,
-				// 	temp: temperature,
-				// 	hum: humidity,
-				// 	lux: lux
-				// });
+				timeStampArr[i] = dataView.getUint32(i * RECORD_SIZE, true)
+				tempArr[i] = dataView.getUint16(i * RECORD_SIZE + 4, true)
+				humArr[i] = dataView.getInt16(i * RECORD_SIZE + 6, true)
+				luxArr[i] = dataView.getUint16(i * RECORD_SIZE + 8, true)
 			}
 
-			// console.log('Sensor data:', sensorData);
 			console.log('count:', recordCount)
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
 			set_timeWindow(chart_id)
-		} else {
-			const errorText = await resp.text()
-			console.error('Server error:', errorText)
-			console.log("STOP SCHEDULER. char_id:", chart_id)
-			// Stop scheduler
-			clearInterval(chartObjs[chart_id].scheduler)
-			// throw new Error(`HTTP ${resp.status}`)
+
+		} catch (error) {
+			console.error('Request failed:', error)
+			if (chartObjs[chart_id]?.scheduler) {
+				clearInterval(chartObjs[chart_id].scheduler)
+			}
+			throw error
 		}
-	} catch (error) {
-		console.error('Connection error:', error);
-	}
+	})
 }
 
 

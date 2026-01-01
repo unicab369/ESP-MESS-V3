@@ -40,6 +40,7 @@
 
 	<!-- uPlot JavaScript -->
 	<script src="../lib/uplot/dist/uPlot.iife.min.js"></script>
+	<script src="RequestScheduler.js"></script>
 	<script src="sensors-script.js"></script>
 
 	<script>		
@@ -69,9 +70,10 @@
 				})
 
 				if (resp.ok) {
-					const json = await resp.json()
-					console.log('Configs:', json)
-					initCharts(json)
+					const arrays = await resp.json()
+					
+					console.log('%cConfigs', 'color: red', arrays)
+					initCharts(arrays)
 				} else {
 					const errorText = await resp.text()
 					console.error('Server error:', errorText)
