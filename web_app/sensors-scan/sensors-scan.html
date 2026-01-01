@@ -53,21 +53,26 @@
 				</button>
 			</div>
 			
-			<div id="devicesList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; 
+			<div id="devicesList" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
 									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 				<div style="text-align: center; padding: 20px; color: #666;">
 					No devices found
 				</div>
 			</div>
 			
-			<div id="devInfo-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
+			<div id="devInfos-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
 
 		</div>
 	</div>
 
 	<!-- scripts -->
 	<script src="../lib/RequestScheduler.js"></script>
-	<script>		
+	<script>
+		// Initialize on page load
+		window.addEventListener('DOMContentLoaded', async function() {
+			startScan()
+		});
+
 		async function startScan() {
 			const serverIp = get_serverIp()
 			if (!serverIp) return
@@ -86,7 +91,7 @@
 					if (resp.ok) {
 						const result = await resp.json()
 						console.log('%cresult:', 'color: red', result)
-						updateDeviceList(result)
+						updateDeviceList(result.caches, result.cfgs)
 					} else {
 						const errorText = await resp.text()
 						console.error('Server error:', errorText)
@@ -100,66 +105,140 @@
 
 		let devices = []
 
-		function updateDeviceList(list) {
-			const devicesList = document.getElementById('devicesList');
-			const now = new Date();
-			
+		function updateDeviceList(device_caches, device_configs) {
 			// Mark offline devices (older than 5 minutes)
-			const fiveMinutesAgo = Date.now() - 300000;
-
-			list.forEach(item => {
+			const fiveMinutesAgo = Date.now() - 300000
+			devices = []
+			
+			device_caches.forEach(item => {
 				const lastSeen = new Date(item[1]*1000);
 
 				devices.push({
 					name: 'CH5xx',
 					id: item[0],
 					lastSeen: lastSeen,
-					status: lastSeen.getTime() < fiveMinutesAgo ? 'online' : 'offline'
+					is_online: lastSeen.getTime() < fiveMinutesAgo,
+					is_logged: device_configs.find(cfg => cfg[0] === item[0])
 				})
 			})
 			
 			// Update UI
 			if (devices.length === 0) {
-				devicesList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No devices found</div>';
+				document.getElementById('devicesList').innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No devices found</div>';
 			} else {
 				let html = '';
 				devices.forEach(device => {
-					const timeAgo = Math.round((Date.now() - device.lastSeen.getTime()) / 1000);
-					const statusColor = device.status === 'online' ? '#4CAF50' : '#f44336';
+					const timeAgo = Math.round((Date.now() - device.lastSeen.getTime()) / 1000)
+					const status_objs = {
+						color: device.is_online ? '#4CAF50' : '#f44336',
+						text: device.is_online ? 'Online' : 'Offline'
+					}
+					const logged_objs = {
+						color: device.is_logged ? '#4CAF50' : '#f44336',
+						text: device.is_logged ? 'Logging' : 'Not Log'
+					}
 					
 					html += /*html*/
-						`<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee;">
+						`<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 							<div style="flex: 1;">
 								<div style="font-weight: bold;">${device.id}</div>
 								<div style="font-size: 0.8rem; color: #666;">
 									${device.name} • ${timeAgo}s ago
 								</div>
 							</div>
-							<div style="background: ${statusColor}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 0.8rem;">
-								${device.status}
+							<div onclick="showOptions()" style="background: ${logged_objs.color}; color: white; padding: 3px 8px; border-radius: 10px;">
+								${logged_objs.text}
+							</div>
+							<div style="background: ${status_objs.color}; color: white; padding: 3px 8px; border-radius: 10px;">
+								${status_objs.text}
 							</div>
 						</div>
 					`;
 				});
-				devicesList.innerHTML = html;
+				document.getElementById('devicesList').innerHTML = html
 			}
 			
 			// Update counters
-			const onlineCount = devices.filter(d => d.status === 'online').length;
-			document.getElementById('devInfo-container').innerHTML = /*html*/
+			const onlineCount = devices.filter(d => d.is_online);
+			document.getElementById('devInfos-container').innerHTML = /*html*/
 				`
 					<div>Total: <span id="deviceCount">${devices.length}</span></div>
 					<div>Online: <span id="onlineCount">${onlineCount}</span></div>
-					<div>Last: <span id="lastScan">${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
+					<div>Last: <span id="lastScan">${(new Date()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
 				`
 		}
 
 		function clearDevices() {
-			if (devices.length > 0 && confirm('Clear all devices?')) {
-				devices = [];
-				updateDeviceList([]);
-			}
+			if (devices.length < 1 || !confirm('Clear all devices?')) return
+			devices = []
+			updateDeviceList([])
+		}
+
+		function showOptions() {
+			threeButtonAlert('Configure Log',
+				{ name: 'Start Log', action: () => { console.log('Start log') } },
+				{ name: 'Stop Log', action: () => { console.log('Stop log') } },
+				{ name: 'Cancel', action: () => { console.log('Cancel') } },
+			)
+		}
+		
+		function closeModal() {
+			document.body.removeChild(document.getElementById('overlay-container'));
+			window.confirm3 = null;
+		}
+
+		function threeButtonAlert(message, option1, option2, option3) {
+			if (window.confirm3) return; // Prevent multiple
+			const overlay = document.createElement('div');
+			overlay.id = 'overlay-container';
+			overlay.style.cssText = `
+				position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+				background: rgba(0,0,0,0.5); z-index: 9999;
+				display: flex; align-items: center; justify-content: center;
+			`;
+			
+			const box = document.createElement('div');
+			box.style.cssText = `
+				background: white; padding: 20px; border-radius: 8px;
+				min-width: 300px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+			`;
+			
+			const msg = document.createElement('div');
+			msg.textContent = message;
+			msg.style.marginBottom = '20px';
+			msg.style.fontSize = '16px';
+			box.appendChild(msg);
+
+			// Create buttons
+			const createButton = (option, color) => {
+				const btn = document.createElement('button');
+				btn.textContent = option.name;
+				btn.style.cssText = `
+					padding: 10px 20px; background: ${color}; 
+					color: white; border: none; border-radius: 5px;
+					margin: 0 5px; cursor: pointer;
+				`;
+				btn.onclick = () => {
+					document.body.removeChild(overlay);
+					window.confirm3 = null;
+					option.action(); // Call the action function
+				};
+				return btn;
+			};
+
+			const buttonContainer = document.createElement('div');
+			buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: center;';
+			buttonContainer.appendChild(createButton(option1, '#4CAF50'));
+			buttonContainer.appendChild(createButton(option2, '#f44336'));
+			buttonContainer.appendChild(createButton(option3, 'lightgray'));
+		
+			box.appendChild(buttonContainer);
+			overlay.appendChild(box);
+			document.body.appendChild(overlay);
+			window.confirm3 = overlay;
 		}
 	</script>
 </body>
 </html>
+
+<!-- '🟢' : '🔴' -->

@@ -536,28 +536,22 @@ device_cache_t DEVICE_CACHE[LOG_RECORD_COUNT] = {0};
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record) {
-	int new_index = -1;
-
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		device_cache_t *cache = &DEVICE_CACHE[i];
+		device_cache_t *target = &DEVICE_CACHE[i];
 		
-		if (cache->uuid == uuid) {
+		if (target->uuid == uuid) {
 			// Found existing UUID
-			cache->timestamp = time_ref;
+			target->timestamp = time_ref;
 			break;  // Done!
 		}
 		
-		// Assumption: First empty slot, the rest are uuid = 0
-		if (new_index == -1 && cache->uuid == 0) {
-			new_index = i;
-			break; 
+		//! Assumption: First empty slot, the rest are uuid = 0
+		// UUID is new - add to empty slot and break loop
+		if (target->uuid == 0) { 
+			target->uuid = uuid;
+			target->timestamp = time_ref;
+			break;
 		}
-	}
-
-	// UUID is new - add to empty slot
-	if (new_index >= 0) {
-		DEVICE_CACHE[new_index].uuid = uuid;
-		DEVICE_CACHE[new_index].timestamp = time_ref;
 	}
 
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
@@ -567,8 +561,8 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 	int day = tm->tm_mday;
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
-		if (recs->uuid != uuid) continue;
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid != uuid) continue;
 
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
@@ -584,29 +578,29 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 			continue;
 		}
 
-		uint32_t time_dif = time_ref - recs->timestamp;
+		uint32_t time_dif = time_ref - target->timestamp;
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/latest.bin", uuid, year);
 
 		//# replace 1 hour of records for every second (3600 records)
-		if (recs->timestamp == 0 || time_dif > 3600) {
-			recs->timestamp = time_ref;
+		if (target->timestamp == 0 || time_dif > 3600) {
+			target->timestamp = time_ref;
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
 		}
 		else {
 			sd_append_bin(file_path, record, sizeof(record_t));
 		}
 
-		recs->count++;
-		recs->sum1 += record->value1;
-		recs->sum2 += record->value2;
-		recs->sum3 += record->value3;
+		target->count++;
+		target->sum1 += record->value1;
+		target->sum2 += record->value2;
+		target->sum3 += record->value3;
 
-		if (recs->count >= 60) {
+		if (target->count >= 60) {
 			record_t minute_avg = {
 				.timestamp = record->timestamp,
-				.value1 = recs->sum1 / recs->count,
-				.value2 = recs->sum2 / recs->count,
-				.value3 = recs->sum3 / recs->count
+				.value1 = target->sum1 / target->count,
+				.value2 = target->sum2 / target->count,
+				.value3 = target->sum3 / target->count
 			};
 
 			//# STEP2: `/log/<uuid>/2025/1230.bin`
@@ -615,10 +609,10 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 			);
 			sd_append_bin(file_path, record, sizeof(record_t));
 
-			recs->count = 0;
-			recs->sum1 = 0;
-			recs->sum2 = 0;
-			recs->sum3 = 0;
+			target->count = 0;
+			target->sum1 = 0;
+			target->sum2 = 0;
+			target->sum3 = 0;
 		}
 	}
 }
@@ -634,11 +628,11 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	}
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
-		if (recs->uuid == 0) break;
-		if (recs->uuid == uuid) recs->config = config;
-		fprintf(f, "%08lX %ld\n", recs->uuid, recs->config);
-		printf("saved: %08lX %ld\n", recs->uuid, recs->config);
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid == 0) break;
+		if (target->uuid == uuid) target->config = config;
+		fprintf(f, "%08lX %ld\n", target->uuid, target->config);
+		printf("saved: %08lX %ld\n", target->uuid, target->config);
 	}
 
 	fclose(f);
@@ -670,9 +664,9 @@ static esp_err_t sd_load_config() {
 		if (*endptr != '\n' && *endptr != '\0') continue;
 		
 		if (uuid == 0 || config == 0) continue;
-		record_aggregate_t *recs = &RECORD_AGGREGATE[loaded];
-		recs->uuid = uuid;
-		recs->config = config;
+		record_aggregate_t *target = &RECORD_AGGREGATE[loaded];
+		target->uuid = uuid;
+		target->config = config;
 		loaded++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
     }
@@ -681,6 +675,63 @@ static esp_err_t sd_load_config() {
     ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
     return ESP_OK;
 }
+
+
+static int make_device_configs_str(char *buffer, size_t buffer_size) {
+	if (buffer == NULL || buffer_size < 3) return 0;
+	char *ptr = buffer;
+	int count = 0;
+	*ptr++ = '[';
+	
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid == 0 || target->config == 0) continue;
+		if (count > 0) *ptr++ = ',';
+		
+		int written = snprintf(ptr, buffer_size - (ptr - buffer),
+							"[\"%08lX\",%ld]", target->uuid, target->config);
+		if (written < 0 || written >= buffer_size - (ptr - buffer)) break; // Buffer full
+		ptr += written;
+		count++;
+		
+		// Safety check
+		if (ptr - buffer >= buffer_size - 64) break;
+	}
+	
+	printf("configs count: %d\n", count);
+	*ptr++ = ']';
+	*ptr = '\0';
+	return ptr - buffer; // Return length
+}
+
+static int make_device_caches_str(char *buffer, size_t buffer_size) {
+	if (buffer == NULL || buffer_size < 3) return 0;
+	char *ptr = buffer;
+	int count = 0;
+	*ptr++ = '[';
+	
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+        device_cache_t *target = &DEVICE_CACHE[i];
+        if (target->uuid == 0) break;
+        if (count > 0) *ptr++ = ',';
+		
+		int written = snprintf(ptr, buffer_size - (ptr - buffer),
+							"[\"%08lX\",%ld]", target->uuid, target->timestamp);
+		if (written < 0 || written >= buffer_size - (ptr - buffer)) break; // Buffer full
+		ptr += written;
+		count++;
+		
+		// Safety check
+		if (ptr - buffer >= buffer_size - 64) break;
+	}
+	
+	printf("caches count: %d\n", count);
+	*ptr++ = ']';
+	*ptr = '\0';
+	return ptr - buffer; // Return length
+}
+
+
 
 // Function to read and verify binary data
 size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size_t max_records) {

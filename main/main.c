@@ -27,32 +27,50 @@ int random_int(int min, int max) {
 }
 
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+    httpd_resp_set_type(req, "application/json");
+    
+    char response[2048];
+    char *ptr = response;
+    size_t remaining = sizeof(response);
+    
+    // Start JSON object
+    int written = snprintf(ptr, remaining, "{\"caches\":");
+    ptr += written;
+    remaining -= written;
+    
+    // Add caches array
+    written = make_device_caches_str(ptr, remaining);
+    if (written == 0) return ESP_FAIL;
+    ptr += written;
+    remaining -= written;
+    
+    // Add comma and configs key
+    written = snprintf(ptr, remaining, ",\"cfgs\":");
+    ptr += written;
+    remaining -= written;
+    
+    // Add configs array
+    written = make_device_configs_str(ptr, remaining);
+    if (written == 0) return ESP_FAIL;
+    ptr += written;
+    remaining -= written;
+    
+    // Close JSON object
+    written = snprintf(ptr, remaining, "}");
+    ptr += written;
+    
+    return httpd_resp_send(req, response, ptr - response);
+}
+
+esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	// Set response headers
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "application/json");
 
-	static char response[1024];
-    char *ptr = response;
-    int count = 0;
-    *ptr++ = '[';
-    
-    for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-        device_cache_t *target = &DEVICE_CACHE[i];
-        if (target->uuid == 0) break;
-        if (count > 0) *ptr++ = ',';
-        
-        // Minimal snprintf for inner array only
-        ptr += snprintf(ptr, sizeof(response) - (ptr - response),
-                    "[\"%08lX\",%ld]", target->uuid, target->timestamp);
-        if (ptr - response >= sizeof(response) - 64) break;
-        count++;
-    }
-    
-    *ptr++ = ']';
-    *ptr = '\0';
-
-	printf("HTTP_SCAN_HANDLER: %d found\n", count);
-    return httpd_resp_send(req, response, ptr - response);
+    char response[1024];
+	int response_len = make_device_configs_str(response, sizeof(response));
+    return httpd_resp_send(req, response, response_len);
 }
 
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
@@ -91,42 +109,6 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
-	char query[128];
-
-	// Set response headers
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-    if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-	}
-
-    static char response[1024];
-    char *ptr = response;
-    int count = 0;
-    *ptr++ = '[';
-    
-    for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-        record_aggregate_t *recs = &RECORD_AGGREGATE[i];
-        if (recs->uuid == 0 || recs->config == 0) continue;
-        if (count > 0) *ptr++ = ',';
-        
-        // Minimal snprintf for inner array only
-        ptr += snprintf(ptr, sizeof(response) - (ptr - response),
-                    "[\"%08lX\",%ld]", recs->uuid, recs->config);
-        if (ptr - response >= sizeof(response) - 64) break;
-        count++;
-    }
-    
-    *ptr++ = ']';
-    *ptr = '\0';
-    
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, response, ptr - response);
-}
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
@@ -203,17 +185,17 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	size_t total_bytes = 0;
 
 	while ((bytes_read = fread(buffer, 1, sizeof(buffer), _file)) > 0) {
-        esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Error sending chunk: %d", err);
-            fclose(_file);
-            return err;
-        }
+		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "Error sending chunk: %d", err);
+			fclose(_file);
+			return err;
+		}
 		total_bytes += bytes_read;
 	}
 	fclose(_file);
 	ESP_LOGW(TAG, "path %s: %d Bytes", path, total_bytes);
-	
+
 	// End chunked response
 	return httpd_resp_send_chunk(req, NULL, 0);
 }

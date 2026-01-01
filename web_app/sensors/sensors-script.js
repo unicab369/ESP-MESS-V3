@@ -249,13 +249,14 @@ async function esp_reloadData(chart_id) {
 	if (!serverIp) return
 
 	scheduler.add(async () => {
+		const today = new Date()
 		let startTime = Date.now()
 
 		const params = new URLSearchParams({
 			dev: chart_id,					// device
-			yr: 2025,						// year
-			mth: 12,						// month
-			day: 31,						// day
+			yr: today.getFullYear(),						// year
+			mth: today.getMonth() + 1,						// month
+			day: today.getDate(),						// day
 			win: get_timeWindow(chart_id).value 	// time window
 		})
 		console.log('Fetching data:', params.toString())
