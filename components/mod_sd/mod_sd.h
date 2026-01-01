@@ -638,6 +638,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 			target->config = config;
 			fprintf(f, "%08lX %ld\n", target->uuid, target->config);
 			printf("saved: %08lX %ld\n", target->uuid, target->config);
+			break;
 		}
 
 		if (target->uuid == 0) {

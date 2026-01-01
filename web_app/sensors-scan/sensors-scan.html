@@ -73,38 +73,10 @@
 	<script>
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', async function() {
-			startScan()
+			service_startScan((result)=>{
+				updateDeviceList(result.caches, result.cfgs)
+			})
 		});
-
-		async function startScan() {
-			const serverIp = get_serverIp()
-			if (!serverIp) return
-
-			const params = new URLSearchParams({
-				dev: "aa"		
-			})
-
-			scheduler.add(async () => {
-				try {
-					// Load config
-					const resp = await fetch(`http://${serverIp}/scan?${params.toString()}`, {
-						method: 'GET'
-					})
-
-					if (resp.ok) {
-						const result = await resp.json()
-						console.log('%cresult:', 'color: red', result)
-						updateDeviceList(result.caches, result.cfgs)
-					} else {
-						const errorText = await resp.text()
-						console.error('Server error:', errorText)
-					}
-				}
-				catch(error) {
-					console.error('Connection error:', error)
-				}
-			})
-		}
 		
 		function closeModal() {
 			document.body.removeChild(document.getElementById('overlay-container'));

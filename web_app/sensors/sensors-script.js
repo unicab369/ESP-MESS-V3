@@ -211,33 +211,10 @@ async function esp_saveConfig(chart_id) {
 
 		if (timeWindow > -1 && timeWindow < appConfig.time_window_mins.length &&
 			updateWindow > -1 && updateWindow < appConfig.update_window_ms.length) {
-			config = 1E9 + timeWindow + updateWindow*100
+			config = 1E9 + timeWindow*100 + updateWindow
 		}
 
-		service_saveConfig(chart_id, config, null)
-		// const params = new URLSearchParams({
-		// 	dev: chart_id,
-		// 	cfg: config					
-		// });
-		// console.log('Fetching config:', params.toString());
-
-		// try {
-		// 	// Load config
-		// 	const resp = await fetch(`http://${serverIp}/s_config?${params.toString()}`, {
-		// 		method: 'GET',
-		// 	})
-
-		// 	if (resp.ok) {
-		// 		const text = await resp.text()
-		// 		console.log('save request:', text)
-		// 	} else {
-		// 		const errorText = await resp.text()
-		// 		console.error('Server error:', errorText)
-		// 	}
-		// }
-		// catch(error) {
-		// 	console.error('Connection error:', error)
-		// }
+		service_saveConfig(chart_id, config)
 	})
 }
 
