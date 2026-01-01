@@ -524,7 +524,6 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 #define LOG_RECORD_COUNT 10
 record_aggregate_t RECORD_AGGREGATE[LOG_RECORD_COUNT] = {0};
-char file_path[64];
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
@@ -532,6 +531,7 @@ char file_path[64];
 
 static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
 	//# STEP1: `/log/<uuid>/2025/latest.bin`
+	char file_path[64];
 	int year = tm->tm_year + 1900;
 	int month = tm->tm_mon + 1;
 	int day = tm->tm_mday;
@@ -595,14 +595,72 @@ static void sd_bin_record_all(uint32_t uuid, struct tm *tm, record_t* record) {
 	}
 }
 
+// Config: /log/config.bin
+static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
+	const char *file_path = MOUNT_POINT"/log/config.txt";
+
+	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
+	if (!f) {
+		ESP_LOGE(TAG_SD, "Failed to write	: %s", file_path);
+		return ESP_FAIL;
+	}
+
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		record_aggregate_t *recs = &RECORD_AGGREGATE[i];
+		if (recs->uuid == 0) break;
+		if (recs->uuid == uuid) recs->config = config;
+		fprintf(f, "%08lX %ld\n", recs->uuid, recs->config);
+	}
+
+	fclose(f);
+	ESP_LOGW(TAG_SD, "write to file: %s", file_path);
+	return ESP_OK;
+}
+
+static esp_err_t sd_load_config() {
+    const char *file_path = MOUNT_POINT"/log/config.txt";
+    FILE *f = fopen(file_path, "r");
+    if (!f) {
+		ESP_LOGE(TAG_SD, "Failed to read: %s", file_path);
+		return ESP_FAIL;
+	}
+    
+    char line[64];
+    int loaded = 0;
+    
+    while (fgets(line, sizeof(line), f)) {
+		// Quick validation
+		if (line[8] != ' ') continue;
+		
+		// Parse with strtoul
+		char *endptr;
+		uint32_t uuid = strtoul(line, &endptr, 16);		// base 16
+		if (*endptr != ' ') continue;
+		
+		uint32_t config = strtoul(endptr + 1, &endptr, 10);		// base 10
+		if (*endptr != '\n' && *endptr != '\0') continue;
+		
+		if (uuid == 0 || config == 0) continue;
+		record_aggregate_t *recs = &RECORD_AGGREGATE[loaded];
+		recs->uuid = uuid;
+		recs->config = config;
+		loaded++;
+		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
+    }
+    
+    fclose(f);
+    ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
+    return ESP_OK;
+}
+
 // Function to read and verify binary data
 size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size_t max_records) {
-	char path[64];
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
+	char file_path[64];
+	snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 
-	FILE *f = fopen(path, "rb");
+	FILE *f = fopen(file_path, "rb");
 	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", path);
+		ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", file_path);
 		return false;
 	}
 
@@ -623,7 +681,7 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size
 		ESP_LOGW(TAG_SD, "Partial read: %d of %d records", records_read, record_count);
 	}
 
-	ESP_LOGI(TAG_SD, "Read %d records from %s", records_read, path);
+	ESP_LOGI(TAG_SD, "Read %d records from %s", records_read, file_path);
 
 	return records_read;
 }

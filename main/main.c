@@ -50,9 +50,14 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 		return ESP_OK;
 	}
-	
+
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
-	printf("Device: %s, Config: %ld\n", device_id, config);
+	printf("Save Config uuid: %08lX, Config: %ld\n", uuid, config);
+
+	if (sd_save_config(uuid, config) != ESP_OK) {
+		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save config");
+		return ESP_OK;
+	}
 
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
@@ -236,17 +241,7 @@ void app_main(void) {
 				ESP_LOGE(TAG_SD, "Failed to create /log");
 			}
 
-			uint32_t uuid = 0xAABBCCDA;
-			for (int i=0; i<5; i++) {
-				uuid += i;
-				RECORD_AGGREGATE[i].uuid = uuid;
-
-				if (i<3) {
-					RECORD_AGGREGATE[i].config = 1E9;
-					RECORD_AGGREGATE[i].config += 2;
-					RECORD_AGGREGATE[i].config += 200;
-				}
-			}
+			sd_load_config();
 		}
 	}
 
