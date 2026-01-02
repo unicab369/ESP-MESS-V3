@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -252,8 +253,38 @@ void app_main(void) {
 				ESP_LOGE(TAG_SD, "Failed to create /log");
 			}
 
-			sd_load_config();
+			// sd_load_config();
+
+			int counter = 0;
+			uint32_t timeRef, timeDif;
+
+			while(1) {
+				timeRef = esp_timer_get_time();
+				for (int i=0; i<1000; i++) {
+					ESP_LOGI(TAG_SD, "IM HERE: %d", counter++);
+				}
+				timeDif = esp_timer_get_time() - timeRef;
+				printf("timeDif1: %ld\n", timeDif);
+
+				counter = 0;
+				timeRef = esp_timer_get_time();
+				sd_log_initialized = 0;
+
+				for (int i=0; i<1000; i++) {
+					ESP_LOGI_SD(TAG_SD, "IM HERE: %d", counter++);
+				}
+				fclose(log_file);
+				timeDif = esp_timer_get_time() - timeRef;
+				printf("timeDif2: %ld\n", timeDif);
+
+				vTaskDelay(2000 / portTICK_PERIOD_MS);
+			}
 		}
+	}
+
+	while(1) {
+		printf("IM HERE 222\n");
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 
 	while (1) {
@@ -269,7 +300,7 @@ void app_main(void) {
 
 			uint32_t now = (uint32_t)time_now();
 
-			for (int i=0; i<5; i++) {
+			for (int i=0; i<10; i++) {
 				record_t records = {
 					.timestamp = now,  // Fixed timestamp
 					// .value1 = 10,

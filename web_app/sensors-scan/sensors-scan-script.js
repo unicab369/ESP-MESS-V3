@@ -78,10 +78,10 @@ function showOptions(index) {
 		{
 			name: 'Start Log', action: () => {
 				if (target.config > 0) return
-				console.log("update config: %s %d", target.uuid, 1000000101)
+				console.log("update config: %s %d", target.uuid, 1000000102)
 
 				// save default config 5 minutes time window, 2 seconds update window
-				service_saveConfig(target.uuid, 1000000101, ()=>{
+				service_saveConfig(target.uuid, 1000000102, ()=>{
 					service_startScan((result)=>{
 						updateDeviceList(result.caches, result.cfgs)
 					})

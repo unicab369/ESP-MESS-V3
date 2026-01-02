@@ -9,6 +9,7 @@
 #include "sd_test_io.h"
 
 #include <time.h>
+#include "esp_timer.h"
 
 // link: https://github.com/espressif/esp-idf/tree/master/examples/storage/sd_card
 
@@ -37,33 +38,8 @@ uint32_t hex_to_uint32_unrolled(const char *hex_str) {
 }
 
 static const char *TAG_SD = "[SD]";
-
 static FILE *file;
 
-//# Open File
-esp_err_t sd_fopen(const char *path) {
-	ESP_LOGI(TAG_SD, "Open file %s", path);
-
-	file = fopen(path, "r");
-	if (file == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading");
-		return ESP_FAIL;
-	}
-
-	return ESP_OK;
-}
-
-//# Read File
-size_t sd_fread(char *buff, size_t len) {
-	// Reads a specified number of bytes (or records) from a file.
-	return fread(buff, 1, len, file);
-}
-
-int sd_fclose() {
-	if (file == NULL) return 0;
-	ESP_LOGI(TAG_SD, "sd_fclose");
-	return fclose(file);
-}
 
 //# Write File
 esp_err_t sd_write(const char *path, char *buff) {
@@ -607,7 +583,7 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 			};
 
 			//# STEP2: `/log/<uuid>/2025/1230.bin`
-			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%d%d.bin", 
+			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%02d%02d.bin", 
 				uuid, year, month, day
 			);
 			sd_append_bin(file_path, record, sizeof(record_t));
@@ -622,8 +598,24 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 
 // Config: /log/config.bin
 static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
-	const char *file_path = MOUNT_POINT"/log/config.txt";
+	// need 2 passes
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		//# overwrite existing uuid's config
+		if (target->uuid == uuid) {
+			target->config = config;
+			break;
+		}
+		if (target->uuid == 0) {
+			//! Assumption: First empty slot, the rest are uuid = 0
+			// UUID is new - add to empty slot and break loop
+			target->uuid = uuid;
+			target->config = config;		// default config
+			break;
+		}
+	}
 
+	const char *file_path = MOUNT_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
 		ESP_LOGE(TAG_SD, "Failed to write	: %s", file_path);
@@ -632,24 +624,10 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
-	
-		//# overwrite existing uuid's config
-		if (target->uuid == uuid) {
-			target->config = config;
-			fprintf(f, "%08lX %ld\n", target->uuid, target->config);
-			printf("saved: %08lX %ld\n", target->uuid, target->config);
-			break;
-		}
+		if (target->uuid == 0) continue;
 
-		if (target->uuid == 0) {
-			//! Assumption: First empty slot, the rest are uuid = 0
-			// UUID is new - add to empty slot and break loop
-			target->uuid = uuid;
-			target->config = config;		// default config
-			fprintf(f, "%08lX %ld\n", target->uuid, target->config);
-			printf("saved: %08lX %ld\n", target->uuid, target->config);
-			break;
-		}
+		fprintf(f, "%08lX %ld\n", target->uuid, target->config);
+		printf("saved: %08lX %ld\n", target->uuid, target->config);
 	}
 
 	fclose(f);
@@ -658,17 +636,17 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 }
 
 static esp_err_t sd_load_config() {
-    const char *file_path = MOUNT_POINT"/log/config.txt";
-    FILE *f = fopen(file_path, "r");
-    if (!f) {
+	const char *file_path = MOUNT_POINT"/log/config.txt";
+	FILE *f = fopen(file_path, "r");
+	if (!f) {
 		ESP_LOGE(TAG_SD, "Failed to read: %s", file_path);
 		return ESP_FAIL;
 	}
-    
-    char line[64];
-    int loaded = 0;
-    
-    while (fgets(line, sizeof(line), f)) {
+
+	char line[64];
+	int loaded = 0;
+
+	while (fgets(line, sizeof(line), f)) {
 		// Quick validation
 		if (line[8] != ' ') continue;
 		
@@ -687,13 +665,92 @@ static esp_err_t sd_load_config() {
 		target->config = config;
 		loaded++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
-    }
-    
-    fclose(f);
-    ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
-    return ESP_OK;
+	}
+
+	fclose(f);
+	ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
+	return ESP_OK;
 }
 
+#define ESP_LOGI_SD(tag, format, ...) do { \
+    sd_file_log("I", tag, format, ##__VA_ARGS__); \
+} while(0)
+
+static int sd_log_initialized = 0;
+const char *file_path = MOUNT_POINT"/log/sd_a.txt";
+static FILE *log_file = NULL;
+
+static esp_err_t sd_file_log(const char *level, const char *tag, const char *format, ...) {
+	if (!sd_log_initialized) {
+		log_file = fopen(file_path, "a");	 // "a" for append - create if doesn't exit
+		if (log_file == NULL) {
+			ESP_LOGE(TAG_SD, "Failed to open file: %s", file_path);
+			return ESP_FAIL;
+		}
+
+		sd_log_initialized = 1;
+	}
+
+	if (log_file) {
+		int64_t runtime_ms = esp_timer_get_time()/1000;
+		fprintf(log_file, "[%lld] %s %s: ", runtime_ms, level, tag);
+        
+        va_list args;
+        va_start(args, format);
+        vfprintf(log_file, format, args);
+        va_end(args);
+        
+        fprintf(log_file, "\n");
+        fflush(log_file);
+    }
+
+	// ESP_LOGI(TAG_SD, "write file: %s", file_path);
+	return ESP_OK;
+}
+
+//###################################################
+
+#define ROTATE_LOG_FILE_COUNT 4
+#define ROTATE_LOG_CLOSE_LINES 100
+#define ROTATE_LOG_MAX_LINES 10000
+
+// The rest stays the same
+static FILE *log_file = NULL;
+
+void rotate_log_write(const char *prefix, const char *msg) {
+	static int file_num = 0;
+	static int lines = 0;
+
+    // Close every x lines
+    if (lines % ROTATE_LOG_CLOSE_LINES == 0) {
+        if (log_file) fclose(log_file);
+        
+        // Rotate to next file every x lines
+        if (lines >= ROTATE_LOG_MAX_LINES) {
+            file_num = (file_num + 1) % ROTATE_LOG_FILE_COUNT;
+            lines = 0;
+        }
+        
+        // Open current file
+        char path[32];
+        snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, file_num);
+        log_file = fopen(path, lines == 0 ? "w" : "a");
+    }
+    
+    // Write
+    if (log_file) {
+        fputs(msg, log_file);
+        fputc('\n', log_file);
+        lines++;
+    }
+}
+
+void rotate_log_close() {
+    if (log_file) fclose(log_file);
+    log_file = NULL;
+}
+
+//###################################################
 
 static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	if (buffer == NULL || buffer_size < 3) return 0;
@@ -750,8 +807,6 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	*ptr = '\0';
 	return ptr - buffer; // Return length
 }
-
-
 
 // Function to read and verify binary data
 size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size_t max_records) {
