@@ -6,6 +6,15 @@
 
 #include "esp_log.h"
 
+#define MOUNT_POINT "/sdcard"
+
+esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin);
+
+int sd_remove_dir(const char* path);
+int sd_ensure_dir(const char *path);
+int sd_overwrite_bin(const char *path, void *data, int data_len);
+int sd_append_bin(const char *path, void *data, int data_len);
+
 typedef struct {
 	FILE *file;
 	int file_num;

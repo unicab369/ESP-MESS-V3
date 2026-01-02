@@ -269,26 +269,14 @@ void app_main(void) {
 			//# Delete log folder
 			int mode = gpio_get_level(MODE_PIN);
 			if (mode == 0) {
-				sd_remove_dir_recursive(MOUNT_POINT"/log");
+				sd_remove_dir(MOUNT_POINT"/log2");
 			}
 
 			if (!sd_ensure_dir(MOUNT_POINT"/log")) {
 				ESP_LOGE(TAG_SD, "Failed to create /log");
 			}
 
-			// sd_load_config();
-
-			int counter = 0;
-			uint32_t timeRef, timeDif;
-
-			while(1) {
-				char output[64];
-				snprintf(output, sizeof(output), "Hello Worldz: %d", counter++);
-				ESP_LOGI_SD(TAG, "%s", output);
-
-				toggle_led();
-				vTaskDelay(100 / portTICK_PERIOD_MS);
-			}
+			sd_load_config();
 		}
 	}
 
