@@ -211,7 +211,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req);
-esp_err_t HTTP_GET_ESPLOG_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -287,7 +287,7 @@ static httpd_handle_t start_webserver(void) {
 		httpd_uri_t esp_log_url = {
 			.uri	  = "/esp_log",
 			.method   = HTTP_GET,
-			.handler  = HTTP_GET_ESPLOG_HANDLER,
+			.handler  = HTTP_GET_LOG_HANDLER,
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &esp_log_url);

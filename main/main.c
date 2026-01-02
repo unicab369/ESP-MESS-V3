@@ -23,6 +23,9 @@
 static const char *TAG = "[ESP-MESS]";
 static uint8_t s_led_state = 0;
 
+// why: use mutex to prevent simultaneous access to sd card from logging and http requests
+SemaphoreHandle_t SD_MUTEX = NULL;
+
 int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
 }
@@ -114,7 +117,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t HTTP_GET_ESPLOG_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_type(req, "text/plain");
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
@@ -140,6 +143,9 @@ esp_err_t HTTP_GET_ESPLOG_HANDLER(httpd_req_t *req) {
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "text/plain");
+	
 	char query[128];
     char device_id[9] = {0};
 	char year[5] = {0};
@@ -147,10 +153,6 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	char day[3] = {0};
 	char win[8] = {0};
 	int timeWindow = 0;
-
-	// Set response headers
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -169,7 +171,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 		return ESP_OK;
 	}
-    ESP_LOGW(TAG_HTTP, "Request device: %s, yr: %s, mth: %s, day: %s, window: %d", 
+    ESP_LOGW_SD(TAG_HTTP, "Request dev: %s, yr: %s, mth: %s, day: %s, window: %d", 
 		device_id, year, month, day, timeWindow);
 
 	// Check if device is valid
@@ -188,7 +190,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		return ESP_OK;
 	}
 
-	// Fetch data from SD card
+	//# Fetch data from SD card
 	char path[64];
 	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
@@ -196,11 +198,20 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
 	}
 
+	if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
+		ESP_LOGE_SD(TAG_HTTP, "Err SD mutex timeout");
+		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
+		return ESP_OK;
+	}
+	static int mutex_taken = 1;
+
 	FILE* _file = fopen(path, "rb");
 	if (_file == NULL) {
-		ESP_LOGE(TAG, "Failed to open file for reading");
+		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
+		xSemaphoreGive(SD_MUTEX);  // Release mutex before returning
+
         // Send error response
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Data file not found");
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
 		return ESP_OK;
 	}
 
@@ -210,23 +221,40 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	size_t total_bytes = 0;
 
 	while ((bytes_read = fread(buffer, 1, sizeof(buffer), _file)) > 0) {
+		// Release mutex while sending network data
+		xSemaphoreGive(SD_MUTEX);
+		mutex_taken = 0;
+
 		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
 		if (err != ESP_OK) {
-			ESP_LOGE(TAG, "Error sending chunk: %d", err);
+			ESP_LOGE_SD(TAG_HTTP, "Err sending chunk: %d", err);
 			fclose(_file);
 			return err;
 		}
 		total_bytes += bytes_read;
+
+		// Re-acquire mutex for next fread
+		if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
+			ESP_LOGE_SD(TAG_HTTP, "Err SD mutex timeout");
+			fclose(_file);
+			httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
+			return ESP_OK;
+		}
+		mutex_taken = 1;
 	}
 	fclose(_file);
-	ESP_LOGW(TAG, "path %s: %d Bytes", path, total_bytes);
+
+	// Release mutex if it was taken
+	if (mutex_taken) xSemaphoreGive(SD_MUTEX);
+	ESP_LOGW_SD(TAG_HTTP, "path %s: %d Bytes", path, total_bytes);
 
 	// End chunked response
 	return httpd_resp_send_chunk(req, NULL, 0);
 }
 
-
 void app_main(void) {
+	SD_MUTEX = xSemaphoreCreateMutex();
+
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
 	esp_err_t ret = nvs_flash_init();
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -259,7 +287,9 @@ void app_main(void) {
 
 	ret = mod_spi_init(&spi_conf0, 20E6);
 
+	//# Set Logs level
 	esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
+	esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
@@ -306,7 +336,14 @@ void app_main(void) {
 
 				uuid += i;
 				cache_device(uuid, now);
+
+				// Take mutex ONCE for the entire operation
+				if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
+					ESP_LOGE_SD(TAG_SD, "Err SD mutex timeout");
+					return;
+				}
 				sd_bin_record_all(uuid, now, &timeinfo, &records);
+				xSemaphoreGive(SD_MUTEX);  // Release mutex
 			}
 		}
 

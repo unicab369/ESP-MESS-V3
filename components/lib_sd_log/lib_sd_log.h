@@ -35,9 +35,16 @@ void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...);
 	log_to_sd(&system_log, tag, format, ##__VA_ARGS__); \
 } while(0)
 
+#define ESP_LOGW_SD(tag, format, ...) do { \
+	ESP_LOGW(tag, format, ##__VA_ARGS__); \
+	log_to_sd(&system_log, tag, format, ##__VA_ARGS__); \
+} while(0)
+
 #define ESP_LOGE_SD(tag, format, ...) do { \
 	ESP_LOGE(tag, format, ##__VA_ARGS__); \
 	log_to_sd(&error_log, tag, format, ##__VA_ARGS__); \
+	log_to_sd(&system_log, tag, format, ##__VA_ARGS__); \
 } while(0)
+
 
 #endif /* LIB_SD_LOG_H */
