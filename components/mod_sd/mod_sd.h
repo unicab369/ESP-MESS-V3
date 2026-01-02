@@ -11,6 +11,8 @@
 #include <time.h>
 #include "esp_timer.h"
 
+#include "../lib_sd_log/lib_sd_log.h"
+
 // link: https://github.com/espressif/esp-idf/tree/master/examples/storage/sd_card
 
 #if SOC_SDMMC_IO_POWER_EXTERNAL
@@ -39,44 +41,6 @@ uint32_t hex_to_uint32_unrolled(const char *hex_str) {
 
 static const char *TAG_SD = "[SD]";
 static FILE *file;
-
-
-//# Write File
-esp_err_t sd_write(const char *path, char *buff) {
-	ESP_LOGI(TAG_SD, "Opening file %s", path);
-
-	FILE *f = fopen(path, "w");
-	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for writing");
-		return ESP_FAIL;
-	}
-	fprintf(f, buff);
-	fclose(f);
-	ESP_LOGI(TAG_SD, "File written");
-
-	return ESP_OK;
-}
-
-esp_err_t sd_get(const char *path, char *buff, size_t len) {
-	ESP_LOGI(TAG_SD, "Reading file %s", path);
-	file = fopen(path, "r");
-	if (file == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading");
-		return ESP_FAIL;
-	}
-
-	// Reads a line of text from a file (up to a specified number of characters 
-	// or until a newline is encountered).
-	fgets(buff, len, file);
-	fclose(file);
-
-	// strip newline
-	char *pos = strchr(buff, '\n');
-	if (pos) *pos = '\0';
-	ESP_LOGI(TAG_SD, "Read from file: '%s'", buff);
-
-	return ESP_OK;
-}
 
 static sdmmc_card_t *card;
 static esp_err_t ret;
@@ -253,6 +217,43 @@ void mod_sd_deinit(spi_host_device_t slot) {
 	spi_bus_free(slot);
 }
 
+//# Write File
+esp_err_t sd_write(const char *path, char *buff) {
+	ESP_LOGI(TAG_SD, "Opening file %s", path);
+
+	FILE *f = fopen(path, "w");
+	if (f == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for writing");
+		return ESP_FAIL;
+	}
+	fprintf(f, buff);
+	fclose(f);
+	ESP_LOGI(TAG_SD, "File written");
+
+	return ESP_OK;
+}
+
+esp_err_t sd_get(const char *path, char *buff, size_t len) {
+	ESP_LOGI(TAG_SD, "Reading file %s", path);
+	file = fopen(path, "r");
+	if (file == NULL) {
+		ESP_LOGE(TAG_SD, "Failed to open file for reading");
+		return ESP_FAIL;
+	}
+
+	// Reads a line of text from a file (up to a specified number of characters 
+	// or until a newline is encountered).
+	fgets(buff, len, file);
+	fclose(file);
+
+	// strip newline
+	char *pos = strchr(buff, '\n');
+	if (pos) *pos = '\0';
+	ESP_LOGI(TAG_SD, "Read from file: '%s'", buff);
+
+	return ESP_OK;
+}
+
 void sd_test(void) {
 	if (ret != ESP_OK) return;
 	
@@ -359,9 +360,6 @@ static void sd_csv_write(const char *uuid, const char *dateStr, const char *data
 	}
 }
 
-
-
-
 static bool sd_remove_dir_recursive(const char* path) {
     DIR* dir = opendir(path);
     if (!dir) {
@@ -442,6 +440,13 @@ static bool sd_append_bin(const char *path, void *data, int data_len) {
 	return true;
 }
 
+
+//###################################################
+
+
+//###################################################
+
+
 typedef struct {
 	uint32_t timestamp;
 	int16_t value1;
@@ -485,20 +490,20 @@ static void sd_bin_write(const char *uuid, const char *dateStr, record_t* record
 
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s", uuid);
 	if (!sd_ensure_dir(path)) {
-		ESP_LOGE(TAG_SD, "Failed to create directory");
+		ESP_LOGE_SD(TAG_SD, "Failed to create directory");
 		return;
 	}
 
 	//# Open and write to /sdcard/Log/<uuid>/<dateStr>.bin
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
 	if (!sd_append_bin(path, records, sizeof(record_t))) {
-		ESP_LOGE(TAG_SD, "Failed to write log data");
+		ESP_LOGE_SD(TAG_SD, "Failed to write log data");
 	}
 
 	//# Open and write to /sdcard/Log/<uuid>/latest.bin
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
 	if (!sd_append_bin(path, records, sizeof(record_t))) {
-		ESP_LOGE(TAG_SD, "Failed to write latest data");
+		ESP_LOGE_SD(TAG_SD, "Failed to write latest data");
 	}
 }
 
@@ -546,14 +551,14 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE(TAG_SD, "Failed to create /<uuid>");
+			ESP_LOGE_SD(TAG_SD, "Failed to create /<uuid>");
 			continue;
 		}
 
 		//# /log/<uuid>/2025
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE(TAG_SD, "Failed to create /<uuid>/year");
+			ESP_LOGE_SD(TAG_SD, "Failed to create /<uuid>/year");
 			continue;
 		}
 
@@ -618,7 +623,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	const char *file_path = MOUNT_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
-		ESP_LOGE(TAG_SD, "Failed to write	: %s", file_path);
+		ESP_LOGE_SD(TAG_SD, "Failed to write	: %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -639,7 +644,7 @@ static esp_err_t sd_load_config() {
 	const char *file_path = MOUNT_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
-		ESP_LOGE(TAG_SD, "Failed to read: %s", file_path);
+		ESP_LOGE_SD(TAG_SD, "Failed to read: %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -670,163 +675,6 @@ static esp_err_t sd_load_config() {
 	fclose(f);
 	ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
 	return ESP_OK;
-}
-
-
-
-//###################################################
-
-#define ROTATE_LOG_FILE_COUNT 2
-#define ROTATE_LOG_CLOSE_LINES 20
-#define ROTATE_LOG_MAX_LINES 200
-
-typedef struct {
-	FILE *file;
-	int file_num;
-	int lines;
-	char prefix[8];
-} rotate_log_t;
-
-rotate_log_t system_log = {
-	.file = NULL,
-	.file_num = 0,
-	.lines = 0,
-	.prefix = "sys"
-};
-
-rotate_log_t err_log = {
-	.file = NULL,
-	.file_num = 0,
-	.lines = 0,
-	.prefix = "err"
-};
-
-static FILE *rotate_log = NULL;
-static int rotate_log_latest_file_num = 0;
-static int rotate_log_lines = 0;
-
-// why: rotate log between 2 files, prevent opening file too many times because it is slow
-// fclose is required for the log to be written properly, so here we close the log file every x lines
-// and rotate to the next file when we reach the maximum specified number of lines
-
-void rotate_log_close(rotate_log_t *log) {
-	if (log->file) fclose(log->file);
-	log->file = NULL;
-}
-
-void rotate_log_write(const char *prefix, const char *msg) {
-	// Close every x lines
-	if (rotate_log_lines % ROTATE_LOG_CLOSE_LINES == 0) {
-		if (rotate_log) fclose(rotate_log);
-		
-		// Rotate to next file every x lines
-		if (rotate_log_lines >= ROTATE_LOG_MAX_LINES) {
-			rotate_log_latest_file_num = (rotate_log_latest_file_num + 1) % ROTATE_LOG_FILE_COUNT;
-			rotate_log_lines = 0;
-		}
-		
-		// Open current file
-		char path[64];
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, rotate_log_latest_file_num);
-		rotate_log = fopen(path, rotate_log_lines == 0 ? "w" : "a");
-
-		if (!rotate_log) {
-			ESP_LOGE(TAG_SD, "Failed to open rotate_log: %s", path);
-			return;
-		}
-	}
-
-	// Write
-	if (rotate_log) {
-		fputs(msg, rotate_log);
-		fputc('\n', rotate_log);
-		rotate_log_lines++;
-	}
-}
-
-// read logs from the last 2 files up to the maximum specified size
-
-size_t rotate_log_latest(const char *prefix, char *buffer, size_t buffer_size) {
-    // Input validation
-    if (!buffer || buffer_size < 2) {
-        if (buffer && buffer_size > 0) buffer[0] = '\0';
-        return 0;
-    }
-
-	buffer[0] = '\0';	// Clear buffer
-	size_t total = 0;
-
-	// File 1:  Read from current file
-	char path[64];
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", 
-			prefix, rotate_log_latest_file_num);
-
-	FILE *f = fopen(path, "r");
-	if (f) {
-		// Get file size first
-		fseek(f, 0, SEEK_END);
-		long size = ftell(f);
-		
-		// Safe seek (don't seek before file start)
-		size_t to_read = (size < buffer_size - 1) ? size : buffer_size - 1;
-
-		if (to_read > 0) {
-			fseek(f, -to_read, SEEK_END);
-			total = fread(buffer, 1, to_read, f);
-		}
-		fclose(f);
-	}
-
-	// File 2: Previous 
-	if (total < buffer_size && ROTATE_LOG_FILE_COUNT > 1) {
-		int prev = (rotate_log_latest_file_num - 1 + ROTATE_LOG_FILE_COUNT) % ROTATE_LOG_FILE_COUNT;
-
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, prev);
-		f = fopen(path, "r");
-
-		if (f) {
-			fseek(f, 0, SEEK_END);
-			long size = ftell(f);
-			
-			size_t need = buffer_size - total - 1;  // -1 for null terminator
-			size_t to_read = (size < need) ? size : need;
-			
-			if (to_read > 0) {
-				fseek(f, -to_read, SEEK_END);
-				total += fread(buffer + total, 1, to_read, f);
-			}
-			fclose(f);
-		}
-	}
-
-	buffer[total] = '\0';
-	return total;
-}
-
-
-#define ESP_LOGI_SD(tag, format, ...) do { \
-	sd_file_log("sys", "I", tag, format, ##__VA_ARGS__); \
-} while(0)
-
-static esp_err_t sd_file_log(
-	const char *prefix, const char *level, const char *tag, const char *format, ...
-) {
-	char log_line[100];
-	int64_t runtime_ms = esp_timer_get_time() / 1000;
-	int written = snprintf(log_line, sizeof(log_line), 
-						"[%lld] %s %s: ", runtime_ms, level, tag);
-
-	if (written > 0 && written < sizeof(log_line)) {
-		// Append user message
-		va_list args;
-		va_start(args, format);
-		vsnprintf(log_line + written, sizeof(log_line) - written, format, args);
-		va_end(args);
-	}
-
-	// Use rotate_log_write instead of direct file writing
-	rotate_log_write(prefix, log_line);
-    return ESP_OK;
 }
 
 

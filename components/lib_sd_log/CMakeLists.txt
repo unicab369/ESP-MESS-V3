@@ -1,8 +1,9 @@
 idf_component_register(
-	SRCS "../lib_sd_log/lib_sd_log.c"
+	SRCS
 	INCLUDE_DIRS "."
 	REQUIRES
 		fatfs
 		sd_card
 		esp_timer
+	PRIV_REQUIRES esp_timer
 )

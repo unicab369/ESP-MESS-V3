@@ -119,18 +119,18 @@ esp_err_t HTTP_GET_ESPLOG_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
 	char type_str[4] = {0};
-	char lines_str[8] = {0};
+	char size_str[8] = {0};
 	char query[128];
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
-		httpd_query_key_value(query, "line", lines_str, sizeof(lines_str));
+		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
 	}
 
 	int type = atoi(type_str);
-	int lines = atoi(lines_str);
+	int size = atoi(size_str);
 
 	return ESP_OK;
 }
@@ -283,29 +283,22 @@ void app_main(void) {
 
 			while(1) {
 				char output[64];
-				snprintf(output, sizeof(output), "Hello World: %d", counter++);
-				ESP_LOGI_SD(TAG, output);
-				
+				snprintf(output, sizeof(output), "Hello Worldz: %d", counter++);
+				ESP_LOGI_SD(TAG, "%s", output);
+
 				toggle_led();
 				vTaskDelay(100 / portTICK_PERIOD_MS);
 			}
 		}
 	}
 
-	while(1) {
-		printf("IM HERE 222\n");
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
-	}
-
 	while (1) {
-		// ESP_LOGI(TAG, "Turning the LED %s!", s_led_state == true ? "ON" : "OFF");
-		gpio_set_level(LED_PIN, s_led_state);
-		s_led_state = !s_led_state;
+		toggle_led();
 
 		struct tm timeinfo = timeinfo_now();
 		if (timeinfo.tm_year > 70) {
 			// year number starts at 1900, epoch year is 1970
-			ESP_LOGI(TAG_WIFI, "Time: %s", GET_TIME_STR);
+			ESP_LOGI_SD(TAG_WIFI, "Time: %s", GET_TIME_STR);
 			uint32_t uuid = 0xAABBCCDA;
 
 			uint32_t now = (uint32_t)time_now();
