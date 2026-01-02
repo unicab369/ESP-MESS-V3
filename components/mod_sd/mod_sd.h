@@ -672,83 +672,163 @@ static esp_err_t sd_load_config() {
 	return ESP_OK;
 }
 
-#define ESP_LOGI_SD(tag, format, ...) do { \
-    sd_file_log("I", tag, format, ##__VA_ARGS__); \
-} while(0)
 
-static int sd_log_initialized = 0;
-const char *file_path = MOUNT_POINT"/log/sd_a.txt";
-static FILE *log_file = NULL;
-
-static esp_err_t sd_file_log(const char *level, const char *tag, const char *format, ...) {
-	if (!sd_log_initialized) {
-		log_file = fopen(file_path, "a");	 // "a" for append - create if doesn't exit
-		if (log_file == NULL) {
-			ESP_LOGE(TAG_SD, "Failed to open file: %s", file_path);
-			return ESP_FAIL;
-		}
-
-		sd_log_initialized = 1;
-	}
-
-	if (log_file) {
-		int64_t runtime_ms = esp_timer_get_time()/1000;
-		fprintf(log_file, "[%lld] %s %s: ", runtime_ms, level, tag);
-        
-        va_list args;
-        va_start(args, format);
-        vfprintf(log_file, format, args);
-        va_end(args);
-        
-        fprintf(log_file, "\n");
-        fflush(log_file);
-    }
-
-	// ESP_LOGI(TAG_SD, "write file: %s", file_path);
-	return ESP_OK;
-}
 
 //###################################################
 
-#define ROTATE_LOG_FILE_COUNT 4
-#define ROTATE_LOG_CLOSE_LINES 100
-#define ROTATE_LOG_MAX_LINES 10000
+#define ROTATE_LOG_FILE_COUNT 2
+#define ROTATE_LOG_CLOSE_LINES 20
+#define ROTATE_LOG_MAX_LINES 200
 
-// The rest stays the same
-static FILE *log_file = NULL;
+typedef struct {
+	FILE *file;
+	int file_num;
+	int lines;
+	char prefix[8];
+} rotate_log_t;
+
+rotate_log_t system_log = {
+	.file = NULL,
+	.file_num = 0,
+	.lines = 0,
+	.prefix = "sys"
+};
+
+rotate_log_t err_log = {
+	.file = NULL,
+	.file_num = 0,
+	.lines = 0,
+	.prefix = "err"
+};
+
+static FILE *rotate_log = NULL;
+static int rotate_log_latest_file_num = 0;
+static int rotate_log_lines = 0;
+
+// why: rotate log between 2 files, prevent opening file too many times because it is slow
+// fclose is required for the log to be written properly, so here we close the log file every x lines
+// and rotate to the next file when we reach the maximum specified number of lines
+
+void rotate_log_close(rotate_log_t *log) {
+	if (log->file) fclose(log->file);
+	log->file = NULL;
+}
 
 void rotate_log_write(const char *prefix, const char *msg) {
-	static int file_num = 0;
-	static int lines = 0;
+	// Close every x lines
+	if (rotate_log_lines % ROTATE_LOG_CLOSE_LINES == 0) {
+		if (rotate_log) fclose(rotate_log);
+		
+		// Rotate to next file every x lines
+		if (rotate_log_lines >= ROTATE_LOG_MAX_LINES) {
+			rotate_log_latest_file_num = (rotate_log_latest_file_num + 1) % ROTATE_LOG_FILE_COUNT;
+			rotate_log_lines = 0;
+		}
+		
+		// Open current file
+		char path[64];
+		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, rotate_log_latest_file_num);
+		rotate_log = fopen(path, rotate_log_lines == 0 ? "w" : "a");
 
-    // Close every x lines
-    if (lines % ROTATE_LOG_CLOSE_LINES == 0) {
-        if (log_file) fclose(log_file);
-        
-        // Rotate to next file every x lines
-        if (lines >= ROTATE_LOG_MAX_LINES) {
-            file_num = (file_num + 1) % ROTATE_LOG_FILE_COUNT;
-            lines = 0;
-        }
-        
-        // Open current file
-        char path[32];
-        snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, file_num);
-        log_file = fopen(path, lines == 0 ? "w" : "a");
-    }
-    
-    // Write
-    if (log_file) {
-        fputs(msg, log_file);
-        fputc('\n', log_file);
-        lines++;
-    }
+		if (!rotate_log) {
+			ESP_LOGE(TAG_SD, "Failed to open rotate_log: %s", path);
+			return;
+		}
+	}
+
+	// Write
+	if (rotate_log) {
+		fputs(msg, rotate_log);
+		fputc('\n', rotate_log);
+		rotate_log_lines++;
+	}
 }
 
-void rotate_log_close() {
-    if (log_file) fclose(log_file);
-    log_file = NULL;
+// read logs from the last 2 files up to the maximum specified size
+
+size_t rotate_log_latest(const char *prefix, char *buffer, size_t buffer_size) {
+    // Input validation
+    if (!buffer || buffer_size < 2) {
+        if (buffer && buffer_size > 0) buffer[0] = '\0';
+        return 0;
+    }
+
+	buffer[0] = '\0';	// Clear buffer
+	size_t total = 0;
+
+	// File 1:  Read from current file
+	char path[64];
+	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", 
+			prefix, rotate_log_latest_file_num);
+
+	FILE *f = fopen(path, "r");
+	if (f) {
+		// Get file size first
+		fseek(f, 0, SEEK_END);
+		long size = ftell(f);
+		
+		// Safe seek (don't seek before file start)
+		size_t to_read = (size < buffer_size - 1) ? size : buffer_size - 1;
+
+		if (to_read > 0) {
+			fseek(f, -to_read, SEEK_END);
+			total = fread(buffer, 1, to_read, f);
+		}
+		fclose(f);
+	}
+
+	// File 2: Previous 
+	if (total < buffer_size && ROTATE_LOG_FILE_COUNT > 1) {
+		int prev = (rotate_log_latest_file_num - 1 + ROTATE_LOG_FILE_COUNT) % ROTATE_LOG_FILE_COUNT;
+
+		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", prefix, prev);
+		f = fopen(path, "r");
+
+		if (f) {
+			fseek(f, 0, SEEK_END);
+			long size = ftell(f);
+			
+			size_t need = buffer_size - total - 1;  // -1 for null terminator
+			size_t to_read = (size < need) ? size : need;
+			
+			if (to_read > 0) {
+				fseek(f, -to_read, SEEK_END);
+				total += fread(buffer + total, 1, to_read, f);
+			}
+			fclose(f);
+		}
+	}
+
+	buffer[total] = '\0';
+	return total;
 }
+
+
+#define ESP_LOGI_SD(tag, format, ...) do { \
+	sd_file_log("sys", "I", tag, format, ##__VA_ARGS__); \
+} while(0)
+
+static esp_err_t sd_file_log(
+	const char *prefix, const char *level, const char *tag, const char *format, ...
+) {
+	char log_line[100];
+	int64_t runtime_ms = esp_timer_get_time() / 1000;
+	int written = snprintf(log_line, sizeof(log_line), 
+						"[%lld] %s %s: ", runtime_ms, level, tag);
+
+	if (written > 0 && written < sizeof(log_line)) {
+		// Append user message
+		va_list args;
+		va_start(args, format);
+		vsnprintf(log_line + written, sizeof(log_line) - written, format, args);
+		va_end(args);
+	}
+
+	// Use rotate_log_write instead of direct file writing
+	rotate_log_write(prefix, log_line);
+    return ESP_OK;
+}
+
 
 //###################################################
 

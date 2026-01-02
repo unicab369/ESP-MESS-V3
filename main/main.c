@@ -21,10 +21,15 @@
 #define RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 
 static const char *TAG = "[ESP-MESS]";
-
+static uint8_t s_led_state = 0;
 
 int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
+}
+
+void toggle_led() {
+	gpio_set_level(LED_PIN, s_led_state);
+	s_led_state = !s_led_state;	
 }
 
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
@@ -75,18 +80,17 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 }
 
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
-	char query[128];
+	httpd_resp_set_type(req, "text/plain");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
 	char device_id[9] = {0};
 	char config_str[16] = {0};
 
-	// Set response headers
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
-
+	char query[128];
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
-    if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));
 		httpd_query_key_value(query, "cfg", config_str, sizeof(config_str));
 	}
@@ -110,6 +114,26 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
+esp_err_t HTTP_GET_ESPLOG_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_type(req, "text/plain");
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+	char type_str[4] = {0};
+	char lines_str[8] = {0};
+	char query[128];
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
+		httpd_query_key_value(query, "line", lines_str, sizeof(lines_str));
+	}
+
+	int type = atoi(type_str);
+	int lines = atoi(lines_str);
+
+	return ESP_OK;
+}
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
@@ -213,7 +237,6 @@ void app_main(void) {
 	ESP_LOGI(TAG, "APP START");
 
 	//# Setup Blinking
-	static uint8_t s_led_state = 0;
 	gpio_reset_pin(LED_PIN);
 	gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
 
@@ -259,25 +282,12 @@ void app_main(void) {
 			uint32_t timeRef, timeDif;
 
 			while(1) {
-				timeRef = esp_timer_get_time();
-				for (int i=0; i<1000; i++) {
-					ESP_LOGI(TAG_SD, "IM HERE: %d", counter++);
-				}
-				timeDif = esp_timer_get_time() - timeRef;
-				printf("timeDif1: %ld\n", timeDif);
-
-				counter = 0;
-				timeRef = esp_timer_get_time();
-				sd_log_initialized = 0;
-
-				for (int i=0; i<1000; i++) {
-					ESP_LOGI_SD(TAG_SD, "IM HERE: %d", counter++);
-				}
-				fclose(log_file);
-				timeDif = esp_timer_get_time() - timeRef;
-				printf("timeDif2: %ld\n", timeDif);
-
-				vTaskDelay(2000 / portTICK_PERIOD_MS);
+				char output[64];
+				snprintf(output, sizeof(output), "Hello World: %d", counter++);
+				ESP_LOGI_SD(TAG, output);
+				
+				toggle_led();
+				vTaskDelay(100 / portTICK_PERIOD_MS);
 			}
 		}
 	}
