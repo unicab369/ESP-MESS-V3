@@ -17,9 +17,6 @@
 
 
 #define MAX_CHAR_SIZE	255
-#define MOUNT_POINT "/sdcard"
-#define LOG_FILE_UPDATE_INTERVAL 1800			// 1800 seconds OR 30 minutes
-
 static const char *TAG_SD = "[SD]";
 
 uint32_t hex_to_uint32_unrolled(const char *hex_str) {
@@ -129,9 +126,6 @@ void sd_test(void) {
 //###################################################
 
 
-//###################################################
-
-
 typedef struct {
 	uint32_t timestamp;
 	int16_t value1;
@@ -153,44 +147,6 @@ typedef struct {
 	uint32_t uuid;
 	uint32_t timestamp;
 } device_cache_t;
-
-static void sd_bin_write(const char *uuid, const char *dateStr, record_t* records) {
-	char path[64];
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
-
-	if (sd_append_bin(path, records, sizeof(record_t))) {
-		static time_t last_replace = 0;
-		time_t now = time(NULL);
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
-
-		//# Replace every 1800 seconds OR 30 minutes
-		if (last_replace == 0 || now - last_replace > LOG_FILE_UPDATE_INTERVAL) {
-			last_replace = now;
-			sd_overwrite_bin(path, records, sizeof(record_t));
-		} else {
-			sd_append_bin(path, records, sizeof(record_t));
-		}
-		return;
-	}
-
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s", uuid);
-	if (!sd_ensure_dir(path)) {
-		ESP_LOGE_SD(TAG_SD, "Failed to create directory");
-		return;
-	}
-
-	//# Open and write to /sdcard/Log/<uuid>/<dateStr>.bin
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
-	if (!sd_append_bin(path, records, sizeof(record_t))) {
-		ESP_LOGE_SD(TAG_SD, "Failed to write log data");
-	}
-
-	//# Open and write to /sdcard/Log/<uuid>/latest.bin
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/latest.bin", uuid);
-	if (!sd_append_bin(path, records, sizeof(record_t))) {
-		ESP_LOGE_SD(TAG_SD, "Failed to write latest data");
-	}
-}
 
 
 #define LOG_RECORD_COUNT 10
@@ -236,14 +192,14 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Failed to create /<uuid>");
+			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
 			continue;
 		}
 
 		//# /log/<uuid>/2025
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Failed to create /<uuid>/year");
+			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
 			continue;
 		}
 
@@ -308,7 +264,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	const char *file_path = MOUNT_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Failed to write	: %s", file_path);
+		ESP_LOGE_SD(TAG_SD, "Err write: %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -321,7 +277,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	}
 
 	fclose(f);
-	ESP_LOGW(TAG_SD, "write to file: %s", file_path);
+	ESP_LOGW(TAG_SD, "written: %s", file_path);
 	return ESP_OK;
 }
 
@@ -329,7 +285,7 @@ static esp_err_t sd_load_config() {
 	const char *file_path = MOUNT_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Failed to read: %s", file_path);
+		ESP_LOGE_SD(TAG_SD, "Err read: %s", file_path);
 		return ESP_FAIL;
 	}
 

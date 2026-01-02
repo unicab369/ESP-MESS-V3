@@ -7,6 +7,7 @@
 #include "esp_log.h"
 
 #define MOUNT_POINT "/sdcard"
+static const char *TAG_LOG_SD = "[LOG_SD]";
 
 esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin);
 

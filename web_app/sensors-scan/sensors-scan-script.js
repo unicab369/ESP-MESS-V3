@@ -70,6 +70,12 @@ function clearDevices() {
 	updateDeviceList([])
 }
 
+function startScan() {
+	service_startScan((result)=>{
+		updateDeviceList(result.caches, result.cfgs)
+	})
+}
+
 function showOptions(index) {
 	const target = devices[index]
 	console.log("target", target)
@@ -82,9 +88,7 @@ function showOptions(index) {
 
 				// save default config 5 minutes time window, 2 seconds update window
 				service_saveConfig(target.uuid, 1000000102, ()=>{
-					service_startScan((result)=>{
-						updateDeviceList(result.caches, result.cfgs)
-					})
+					startScan()
 				})
 			}
 		},
@@ -94,9 +98,7 @@ function showOptions(index) {
 				console.log("update config: %s %d", target.uuid, 0)
 
 				service_saveConfig(target.uuid, 0, ()=>{
-					service_startScan((result)=>{
-						updateDeviceList(result.caches, result.cfgs)
-					})
+					startScan()
 				})
 			} 
 		},

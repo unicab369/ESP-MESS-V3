@@ -2,8 +2,7 @@
 #include "esp_timer.h"
 
 #define ROTATE_LOG_FILE_COUNT 2
-
-static const char *TAG = "[SD_LOG]";
+#define LOG_LINE_LENGTH 128
 
 //###################################################
 //# SD Card Setup
@@ -14,16 +13,16 @@ static sdmmc_card_t *card;
 static esp_err_t check_sd_card(esp_err_t ret) {
 	if (ret == ESP_OK) {
 		//# Card has been initialized, print its properties
-		ESP_LOGI(TAG, "Filesystem mounted");
+		ESP_LOGI(TAG_LOG_SD, "Filesystem mounted");
 		sdmmc_card_print_info(stdout, card);
 		return ret;
 	}
 
 	if (ret == ESP_FAIL) {
-		ESP_LOGE(TAG, "Failed to mount filesystem. "
+		ESP_LOGE(TAG_LOG_SD, "Err: mount filesystem. "
 				"Format the card if needed before use.");
 	} else {
-		ESP_LOGE(TAG, "Failed to initialize the card (%s). "
+		ESP_LOGE(TAG_LOG_SD, "Err: initialize the card (%s). "
 				"Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
 		#ifdef CONFIG_EXAMPLE_DEBUG_PIN_CONNECTIONS
 			check_sd_card_pins(&config, pin_count);
@@ -34,7 +33,7 @@ static esp_err_t check_sd_card(esp_err_t ret) {
 }
 
 esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
-	ESP_LOGI(TAG, "Initializing SD card. Using SPI peripheral");
+	ESP_LOGI(TAG_LOG_SD, "Initializing SD card. Using SPI peripheral");
 
 	// For SoCs where the SD power can be supplied both via an internal or external (e.g. on-board LDO) power supply.
 	// When using specific IO pins (which can be used for ultra high-speed SDMMC) to connect to the SD card
@@ -47,7 +46,7 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 
 		ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &pwr_ctrl_handle);
 		if (ret != ESP_OK) {
-			ESP_LOGE(TAG, "Failed to create a new on-chip LDO power control driver");
+			ESP_LOGE(TAG_LOG_SD, "Failed to create a new on-chip LDO power control driver");
 			return;
 		}
 		host.pwr_ctrl_handle = pwr_ctrl_handle;
@@ -63,7 +62,7 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 	static sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 	// host.slot = spi_host;
 
-	ESP_LOGI(TAG, "Mounting filesystem");
+	ESP_LOGI(TAG_LOG_SD, "Mounting filesystem");
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 		.format_if_mount_failed = false,
 		.max_files = 5,
@@ -159,7 +158,7 @@ void sd_mmc_config(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8
 void storage_sd_format_card() {
 	esp_err_t ret = esp_vfs_fat_sdcard_format(MOUNT_POINT, card);
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG, "Failed to format FATFS (%s)", esp_err_to_name(ret));
+		ESP_LOGE(TAG_LOG_SD, "Err: format FATFS (%s)", esp_err_to_name(ret));
 		return;
 	}
 }
@@ -168,7 +167,7 @@ void storage_sd_format_card() {
 void mod_sd_deinit(spi_host_device_t slot) {
 	// unmount partition and disable SPI peripheral
 	esp_vfs_fat_sdcard_unmount(MOUNT_POINT, card);
-	ESP_LOGI(TAG, "Card unmounted");
+	ESP_LOGI(TAG_LOG_SD, "Card unmounted");
 
 	// deinitialize the bus after all devices are removed
 	spi_bus_free(slot);
@@ -222,7 +221,7 @@ void rotate_log_write(rotate_log_t *log, const char *msg) {
 		log->file = fopen(path, log->lines == 0 ? "w" : "a");
 
 		if (!log->file) {
-			ESP_LOGE(TAG, "Failed to open rotate_log: %s", path);
+			ESP_LOGE(TAG_LOG_SD, "open err rotate_log: %s", path);
 			return;
 		}
 	}
@@ -294,7 +293,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 }
 
 void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...) {
-	char log_line[160];
+	char log_line[LOG_LINE_LENGTH];
 	int64_t runtime_ms = esp_timer_get_time() / 1000;
 	int written = snprintf(log_line, sizeof(log_line), "[%lld] %s: ", runtime_ms, tag);
 
@@ -323,7 +322,7 @@ void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...) {
 int sd_remove_dir(const char* path) {
 	DIR* dir = opendir(path);
 	if (!dir) {
-		ESP_LOGE(TAG, "Cannot open directory: %s", path);
+		ESP_LOGE(TAG_LOG_SD, "Err open directory: %s", path);
 		return 0;
 	}
 
@@ -342,7 +341,7 @@ int sd_remove_dir(const char* path) {
 		
 		struct stat statbuf;
 		if (stat(full_path, &statbuf) != 0) {
-			ESP_LOGW(TAG, "Cannot stat: %s", full_path);
+			ESP_LOGW(TAG_LOG_SD, "Cannot stat: %s", full_path);
 			continue;
 		}
 		
@@ -354,11 +353,11 @@ int sd_remove_dir(const char* path) {
 		} else {
 			// Remove file
 			if (remove(full_path) != 0) {
-				ESP_LOGE(TAG, "Failed to remove file %s, error: %d", 
+				ESP_LOGE(TAG_LOG_SD, "Err remove file %s, error: %d", 
 						full_path, errno);
 				success = 0;
 			} else {
-				ESP_LOGI(TAG, "Removed file: %s", full_path);
+				ESP_LOGI(TAG_LOG_SD, "Removed file: %s", full_path);
 			}
 		}
 	}
@@ -367,12 +366,12 @@ int sd_remove_dir(const char* path) {
 
 	// Now remove the (hopefully) empty directory
 	if (rmdir(path) != 0) {
-		ESP_LOGE(TAG, "Failed to remove directory %s, error: %d", 
+		ESP_LOGE(TAG_LOG_SD, "remove dir err %s, error: %d", 
 				path, errno);
 		return 0;
 	}
 
-	ESP_LOGI(TAG, "Removed directory: %s", path);
+	ESP_LOGI(TAG_LOG_SD, "Removed dir: %s", path);
 	return success;
 }
 
@@ -383,7 +382,7 @@ int sd_ensure_dir(const char *path) {
 	}
 	// Not existing -> try to create
 	if (mkdir(path, 0775) != 0 && errno != EEXIST) {
-		ESP_LOGE_SD("FS", "mkdir(%s) failed: errno=%d", path, errno);
+		ESP_LOGE_SD(TAG_LOG_SD, "mkdir(%s) failed: errno=%d", path, errno);
 		return 0;
 	}
 	return 1;
@@ -392,23 +391,23 @@ int sd_ensure_dir(const char *path) {
 int sd_overwrite_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "wb");	 // "wb" for overwrite binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG, "Failed to overwrite: %s", path);
+		ESP_LOGE_SD(TAG_LOG_SD, "Err overwrite: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG, "overwrite file: %s", path);
+	ESP_LOGI_SD(TAG_LOG_SD, "overwritten: %s", path);
 	return 1;
 }
 
 int sd_append_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG, "Failed to write: %s", path);
+		ESP_LOGE_SD(TAG_LOG_SD, "Err write: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG, "write file: %s", path);
+	ESP_LOGI_SD(TAG_LOG_SD, "written: %s", path);
 	return 1;
 }

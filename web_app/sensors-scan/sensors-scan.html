@@ -70,12 +70,10 @@
 	<script src="../scripts/RequestScheduler.js"></script>
 	<script src="../scripts/RequestServices.js"></script>
 
-	<script>
+	<script>		
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', async function() {
-			service_startScan((result)=>{
-				updateDeviceList(result.caches, result.cfgs)
-			})
+			startScan()
 		});
 		
 		function closeModal() {

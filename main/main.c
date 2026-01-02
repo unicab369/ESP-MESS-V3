@@ -259,6 +259,8 @@ void app_main(void) {
 
 	ret = mod_spi_init(&spi_conf0, 20E6);
 
+	esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
+
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
 		ret = sd_spi_config(spi_conf0.host, spi_conf0.cs);
@@ -273,7 +275,7 @@ void app_main(void) {
 			}
 
 			if (!sd_ensure_dir(MOUNT_POINT"/log")) {
-				ESP_LOGE(TAG_SD, "Failed to create /log");
+				ESP_LOGE(TAG_SD, "Err create /log");
 			}
 
 			sd_load_config();
@@ -286,7 +288,7 @@ void app_main(void) {
 		struct tm timeinfo = timeinfo_now();
 		if (timeinfo.tm_year > 70) {
 			// year number starts at 1900, epoch year is 1970
-			ESP_LOGI_SD(TAG_WIFI, "Time: %s", GET_TIME_STR);
+			ESP_LOGI_SD(TAG, "T%s", GET_TIME_STR);
 			uint32_t uuid = 0xAABBCCDA;
 
 			uint32_t now = (uint32_t)time_now();
