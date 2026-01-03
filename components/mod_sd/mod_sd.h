@@ -140,9 +140,9 @@ typedef struct {
 	uint32_t config;
 	uint8_t count;			// aggregated count
 	uint8_t rotation;
-	int16_t sum1;
-	int16_t sum2;
-	int16_t sum3;
+	int32_t sum1;
+	int32_t sum2;
+	int32_t sum3;
 } record_aggregate_t;
 
 typedef struct {
@@ -217,28 +217,43 @@ static void rotate_time_log_write(
 			time_ref - target->timestamp >= BUFFER_DURATION_SEC
 		) {
 			target->rotation = (target->rotation == 0) ? 1 : 0;
-			target->count = 0;
-
 			// Clear the new buffer file (start fresh)
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
 		} else {
 			// Append to current buffer
 			sd_append_bin(file_path, record, sizeof(record_t));
-			target->count++;
 		}
 
-		// update timestamp
-		target->timestamp = time_ref; 
+		// Update aggregation (ALWAYS)
+		target->count++;
+		target->sum1 += record->value1;
+		target->sum2 += record->value2;
+		target->sum3 += record->value3;
+		target->timestamp = time_ref;
 
-		//# 4. Create daily file: /log/<uuid>/2025/1230.bin
+		//# 4. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
 		if (target->last_minute_update == 0 || 
 			time_ref - target->last_minute_update >= 60
 		) {
 			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%02d%02d.bin", 
 				uuid, year, month, day
 			);
-			sd_append_bin(file_path, record, sizeof(record_t));
+
+			record_t minute_avg = {
+				.timestamp = record->timestamp,
+				.value1 = target->sum1 / target->count,
+				.value2 = target->sum2 / target->count,
+				.value3 = target->sum3 / target->count
+			};
+
+			sd_append_bin(file_path, &minute_avg, sizeof(record_t));
 			target->last_minute_update = time_ref;
+
+    		// RESET aggregates
+			target->count = 0;
+			target->sum1 = 0;
+			target->sum2 = 0;
+			target->sum3 = 0;
 		}
 	}
 }
