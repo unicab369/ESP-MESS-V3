@@ -246,7 +246,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 	buffer[0] = '\0';	// Clear buffer
 	size_t total = 0;
 
-	// File 1:  Read from current file
+	//# File 1:  Read from current file
 	char path[64];
 	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
 
@@ -266,7 +266,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 		fclose(f);
 	}
 
-	// File 2: Previous 
+	//# File 2: Previous 
 	if (total < buffer_size && ROTATE_LOG_FILE_COUNT > 1) {
 		int prev = (log->file_num - 1 + ROTATE_LOG_FILE_COUNT) % ROTATE_LOG_FILE_COUNT;
 

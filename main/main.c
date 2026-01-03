@@ -20,7 +20,7 @@
 
 #define RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 
-static const char *TAG = "[ESP-MESS]";
+static const char *TAG_APP = "[APP]";
 static uint8_t s_led_state = 0;
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
@@ -143,6 +143,9 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
+	char* task_name = pcTaskGetName(NULL);
+    ESP_LOGW("DEBUG", "Handler running on task: %s", task_name);
+
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
@@ -203,7 +206,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
 		return ESP_OK;
 	}
-	static int mutex_taken = 1;
+	int mutex_taken = 1;
 
 	FILE* _file = fopen(path, "rb");
 	if (_file == NULL) {
@@ -262,7 +265,7 @@ void app_main(void) {
 		ret = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK(ret);
-	ESP_LOGI(TAG, "APP START");
+	ESP_LOGI(TAG_APP, "APP START");
 
 	//# Setup Blinking
 	gpio_reset_pin(LED_PIN);
@@ -290,6 +293,7 @@ void app_main(void) {
 	//# Set Logs level
 	esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
 	esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
+	esp_log_level_set(TAG_APP, ESP_LOG_NONE);
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
@@ -318,7 +322,7 @@ void app_main(void) {
 		struct tm timeinfo = timeinfo_now();
 		if (timeinfo.tm_year > 70) {
 			// year number starts at 1900, epoch year is 1970
-			ESP_LOGI_SD(TAG, "T%s", GET_TIME_STR);
+			ESP_LOGI_SD(TAG_APP, "T%s", GET_TIME_STR);
 			uint32_t uuid = 0xAABBCCDA;
 
 			uint32_t now = (uint32_t)time_now();
@@ -336,6 +340,9 @@ void app_main(void) {
 
 				uuid += i;
 				cache_device(uuid, now);
+
+				char* task_name = pcTaskGetName(NULL);
+				ESP_LOGW("DEBUG", "app task: %s", task_name);
 
 				// Take mutex ONCE for the entire operation
 				if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {

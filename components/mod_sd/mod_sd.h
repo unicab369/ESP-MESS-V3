@@ -136,8 +136,10 @@ typedef struct {
 typedef struct {
 	uint32_t uuid;
 	uint32_t timestamp;
+	uint32_t last_minute_update;
 	uint32_t config;
 	uint8_t count;			// aggregated count
+	uint8_t rotation;
 	int16_t sum1;
 	int16_t sum2;
 	int16_t sum3;
@@ -173,6 +175,74 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	}
 }
 
+// 1. /log/<uuid>/2025/latest_0.bin → Current 0-30 minutes (1Hz = 1800 points)
+// 2. /log/<uuid>/2025/latest_1.bin → Current 30-60 minutes (1Hz = 1800 points)
+// 3. /log/<uuid>/2025/1230.bin → Daily aggregate (1/min = 1440 points OR 60 per hour)
+// 4. /log/<uuid>/2025/12.bin → Monthly aggregate (1/10min = 4320 records OR 144 per day)
+
+#define BUFFER_DURATION_SEC 1800  // 30 minutes
+
+static void rotate_time_log_write(
+	uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record
+) {
+	char file_path[64];
+	int year = tm->tm_year + 1900;
+	int month = tm->tm_mon + 1;
+	int day = tm->tm_mday;
+
+	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+		//! filter for valid uuid and config
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid != uuid || target->config == 0) continue;
+
+		//# 1. Create UUID directory: /log/<uuid>
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
+		if (!sd_ensure_dir(file_path)) {
+			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
+			continue;
+		}
+
+		//# 2. Create year directory: /log/<uuid>/2025
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
+		if (!sd_ensure_dir(file_path)) {
+			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
+			continue;
+		}
+
+		//# 3. Create rotation file: /log/<uuid>/2025/new_#.bin
+		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/new_%d.bin", 
+				uuid, year, target->rotation);
+
+        if (target->timestamp == 0 || 
+			time_ref - target->timestamp >= BUFFER_DURATION_SEC
+		) {
+			target->rotation = (target->rotation == 0) ? 1 : 0;
+			target->count = 0;
+
+			// Clear the new buffer file (start fresh)
+			sd_overwrite_bin(file_path, record, sizeof(record_t));
+		} else {
+			// Append to current buffer
+			sd_append_bin(file_path, record, sizeof(record_t));
+			target->count++;
+		}
+
+		// update timestamp
+		target->timestamp = time_ref; 
+
+		//# 4. Create daily file: /log/<uuid>/2025/1230.bin
+		if (target->last_minute_update == 0 || 
+			time_ref - target->last_minute_update >= 60
+		) {
+			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%02d%02d.bin", 
+				uuid, year, month, day
+			);
+			sd_append_bin(file_path, record, sizeof(record_t));
+			target->last_minute_update = time_ref;
+		}
+	}
+}
+
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
 // STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
@@ -185,8 +255,8 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 	int day = tm->tm_mday;
 
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
-		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		//! filter for valid uuid and config
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid != uuid || target->config == 0) continue;
 
 		//# /log/<uuid>
@@ -206,7 +276,7 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 		uint32_t time_dif = time_ref - target->timestamp;
 		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/latest.bin", uuid, year);
 
-		//# replace 1 hour of records for every second (3600 records)
+		//# replace the 1 second records for every hour (3600 records)
 		if (target->timestamp == 0 || time_dif > 3600) {
 			target->timestamp = time_ref;
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
