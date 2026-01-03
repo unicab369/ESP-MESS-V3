@@ -42,3 +42,36 @@ Live Server
 Serial Monitor
 WSL
 Power Mode
+
+
+
+
+## terminal command
+view flash size: `esptool.py --port COMX flash_id`
+view chip info:  `esptool.py --port COM4 chip_id`
+config flash size: `idf.py menuconfig` > Serial flasher config > Flash Size
+
+## custom partition table
+`idf.py menuconfig` > Partition Table > Select Custom partition table CSV
+create `partitions.csv` in the main project folder
+check partition table: `idf.py partition-table`
+flash partition table: `idf.py partition-table-flash`
+
+flash storage: `idf.py -p COM4 flash storage`
+flash app: `idf.py -p COM4 flash app`
+flash all: `idf.py flash monitor`
+
+Example partitions:
+# Name,   Type, SubType,  Offset,  Size, Flags
+nvs,      data, nvs,      0x9000,  0x6000,
+phy_init, data, phy,      0xf000,  0x1000,
+storage,  data, littlefs, 0x1000,  1M,
+factory,  app,  factory,        ,    ,
+
+## enable LittleFS
+add this to idf_component.yml: `joltwallet/littlefs: "~=1.20.3"`
+
+## add LittleFS partition manually
+add this to `CMakeLists.txt` under the `main` folder:
+littlefs_create_partition_image(storage ../flash_data FLASH_IN_PROJECT)
+create `flash_data` folder (or your custom folder name) under the main project folder  

@@ -15,12 +15,14 @@
 #include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
+#include "esp_littlefs.h"
+
 #define LED_PIN 22
 #define MODE_PIN 12
 
 #define RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 
-static const char *TAG_APP = "[APP]";
+static const char *TAG = "[APP]";
 static uint8_t s_led_state = 0;
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
@@ -117,25 +119,85 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_type(req, "text/plain");
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+esp_err_t send_http_file(httpd_req_t *req, const char *path) {
+	int mutex_taken = 1;
 
+	FILE* file = fopen(path, "rb");
+	if (file == NULL) {
+		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
+		xSemaphoreGive(SD_MUTEX);  // Release mutex before returning
+
+        // Send error response
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+		return ESP_OK;
+	}
+
+	// Stream file content in chunks
+	char buffer[1024];
+	size_t bytes_read;
+	size_t total_bytes = 0;
+
+	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+		// Release mutex while sending network data
+		xSemaphoreGive(SD_MUTEX);
+		mutex_taken = 0;
+
+		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
+		if (err != ESP_OK) {
+			ESP_LOGE_SD(TAG_HTTP, "Err sending chunk: %d", err);
+			fclose(file);
+			return err;
+		}
+		total_bytes += bytes_read;
+
+		// Re-acquire mutex for next fread
+		if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
+			ESP_LOGE_SD(TAG_HTTP, "Err SD mutex timeout");
+			fclose(file);
+			httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
+			return ESP_OK;
+		}
+		mutex_taken = 1;
+	}
+	fclose(file);
+
+	// Release mutex if it was taken
+	if (mutex_taken) xSemaphoreGive(SD_MUTEX);
+	ESP_LOGW_SD(TAG_HTTP, "path %s: %d Bytes", path, total_bytes);
+
+	// End chunked response
+	return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
 	char type_str[4] = {0};
 	char size_str[8] = {0};
-	char query[128];
+	char pa_str[16] = {0};
+	char pb_str[16] = {0};
+	char pc_str[16] = {0};
+
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
 		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
+		httpd_query_key_value(query, "pa", pa_str, sizeof(pa_str));
+		httpd_query_key_value(query, "pb", pb_str, sizeof(pb_str));
+		httpd_query_key_value(query, "pc", pc_str, sizeof(pc_str));
 	}
 
 	int type = atoi(type_str);
 	int size = atoi(size_str);
 
-	return ESP_OK;
+	char full_path[64];
+	snprintf(full_path, sizeof(full_path), MOUNT_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
+
+	return send_http_file(req, full_path);
 }
 
 // STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
@@ -143,9 +205,6 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
-	char* task_name = pcTaskGetName(NULL);
-    ESP_LOGW("DEBUG", "Handler running on task: %s", task_name);
-
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
@@ -161,7 +220,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
     if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-        httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
+		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
 		httpd_query_key_value(query, "yr", year, sizeof(year));
 		httpd_query_key_value(query, "mth", month, sizeof(month));
 		httpd_query_key_value(query, "day", day, sizeof(day));
@@ -182,7 +241,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	int found_and_validated = 0;
 
 	for (int i=0; i < LOG_RECORD_COUNT; i++) {
-		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].timestamp > 0) {
+		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].last_log_rotation_sec > 0) {
 			found_and_validated = 1;
 			break;
 		}
@@ -194,68 +253,115 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	}
 
 	//# Fetch data from SD card
-	char path[64];
+	char path_str[64];
 	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
+		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
 	} else {
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
+		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
 	}
 
-	if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
-		ESP_LOGE_SD(TAG_HTTP, "Err SD mutex timeout");
-		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
-		return ESP_OK;
-	}
-	int mutex_taken = 1;
+	return send_http_file(req, path_str);
+}
 
-	FILE* _file = fopen(path, "rb");
-	if (_file == NULL) {
-		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
-		xSemaphoreGive(SD_MUTEX);  // Release mutex before returning
+void littlefs_test() {
+	esp_vfs_littlefs_conf_t conf = {
+        .base_path = "/littlefs",
+        .partition_label = "storage",
+        .format_if_mount_failed = true,
+        .dont_mount = false,
+    };
 
-        // Send error response
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-		return ESP_OK;
-	}
+    // Use settings defined above to initialize and mount LittleFS filesystem.
+    // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
+    esp_err_t ret = esp_vfs_littlefs_register(&conf);
 
-	// Stream file content in chunks
-	char buffer[1024];
-	size_t bytes_read;
-	size_t total_bytes = 0;
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find LittleFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
 
-	while ((bytes_read = fread(buffer, 1, sizeof(buffer), _file)) > 0) {
-		// Release mutex while sending network data
-		xSemaphoreGive(SD_MUTEX);
-		mutex_taken = 0;
+    size_t total = 0, used = 0;
+    ret = esp_littlefs_info(conf.partition_label, &total, &used);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
+        esp_littlefs_format(conf.partition_label);
+    } else {
+        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
+    }
 
-		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
-		if (err != ESP_OK) {
-			ESP_LOGE_SD(TAG_HTTP, "Err sending chunk: %d", err);
-			fclose(_file);
-			return err;
-		}
-		total_bytes += bytes_read;
+    // Use POSIX and C standard library functions to work with files.
+    // First create a file.
+    ESP_LOGI(TAG, "Opening file");
+    FILE *f = fopen("/littlefs/hello.txt", "w");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return;
+    }
+    fprintf(f, "Hello World!\n");
+    fclose(f);
+    ESP_LOGI(TAG, "File written");
 
-		// Re-acquire mutex for next fread
-		if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
-			ESP_LOGE_SD(TAG_HTTP, "Err SD mutex timeout");
-			fclose(_file);
-			httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
-			return ESP_OK;
-		}
-		mutex_taken = 1;
-	}
-	fclose(_file);
+    // Check if destination file exists before renaming
+    struct stat st;
+    if (stat("/littlefs/foo.txt", &st) == 0) {
+        // Delete it if it exists
+        unlink("/littlefs/foo.txt");
+    }
 
-	// Release mutex if it was taken
-	if (mutex_taken) xSemaphoreGive(SD_MUTEX);
-	ESP_LOGW_SD(TAG_HTTP, "path %s: %d Bytes", path, total_bytes);
+    // Rename original file
+    ESP_LOGI(TAG, "Renaming file");
+    if (rename("/littlefs/hello.txt", "/littlefs/foo.txt") != 0) {
+        ESP_LOGE(TAG, "Rename failed");
+        return;
+    }
 
-	// End chunked response
-	return httpd_resp_send_chunk(req, NULL, 0);
+    // Open renamed file for reading
+    ESP_LOGI(TAG, "Reading file");
+    f = fopen("/littlefs/foo.txt", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for reading");
+        return;
+    }
+
+    char line[128] = {0};
+    fgets(line, sizeof(line), f);
+    fclose(f);
+    // strip newline
+    char* pos = strpbrk(line, "\r\n");
+    if (pos) {
+        *pos = '\0';
+    }
+    ESP_LOGI(TAG, "Read from file: '%s'", line);
+
+    ESP_LOGI(TAG, "Reading from flashed filesystem example.txt");
+    f = fopen("/littlefs/example.txt", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for reading");
+        return;
+    }
+    fgets(line, sizeof(line), f);
+    fclose(f);
+    // strip newline
+    pos = strpbrk(line, "\r\n");
+    if (pos) {
+        *pos = '\0';
+    }
+    ESP_LOGI(TAG, "Read from file: '%s'", line);
+
+    // All done, unmount partition and disable LittleFS
+    esp_vfs_littlefs_unregister(conf.partition_label);
+    ESP_LOGI(TAG, "LittleFS unmounted");
 }
 
 void app_main(void) {
+	littlefs_test();
+
 	SD_MUTEX = xSemaphoreCreateMutex();
 
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
@@ -265,7 +371,7 @@ void app_main(void) {
 		ret = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK(ret);
-	ESP_LOGI(TAG_APP, "APP START");
+	ESP_LOGI(TAG, "APP START");
 
 	//# Setup Blinking
 	gpio_reset_pin(LED_PIN);
@@ -291,9 +397,9 @@ void app_main(void) {
 	ret = mod_spi_init(&spi_conf0, 20E6);
 
 	//# Set Logs level
-	esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
-	esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
-	esp_log_level_set(TAG_APP, ESP_LOG_NONE);
+	// esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
+	// esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
+	// esp_log_level_set(TAG, ESP_LOG_NONE);
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
@@ -322,7 +428,7 @@ void app_main(void) {
 		struct tm timeinfo = timeinfo_now();
 		if (timeinfo.tm_year > 70) {
 			// year number starts at 1900, epoch year is 1970
-			ESP_LOGI_SD(TAG_APP, "T%s", GET_TIME_STR);
+			ESP_LOGI_SD(TAG, "T%s", GET_TIME_STR);
 			uint32_t uuid = 0xAABBCCDA;
 
 			uint32_t now = (uint32_t)time_now();
@@ -341,15 +447,14 @@ void app_main(void) {
 				uuid += i;
 				cache_device(uuid, now);
 
-				char* task_name = pcTaskGetName(NULL);
-				ESP_LOGW("DEBUG", "app task: %s", task_name);
-
 				// Take mutex ONCE for the entire operation
 				if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(100)) != pdTRUE) {
 					ESP_LOGE_SD(TAG_SD, "Err SD mutex timeout");
 					return;
 				}
-				sd_bin_record_all(uuid, now, &timeinfo, &records);
+				// sd_bin_record_all(uuid, now, &timeinfo, &records);
+
+				rotate_timeLog_write(uuid, now, &timeinfo, &records);
 				xSemaphoreGive(SD_MUTEX);  // Release mutex
 			}
 		}

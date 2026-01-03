@@ -48,6 +48,21 @@ function updateDeviceList(device_caches, device_configs) {
 						<div style="background: ${status_objs.color}; color: white; padding: 3px 8px; border-radius: 10px;">
 							${status_objs.text}
 						</div>
+						<div onclick="showLog('${index}')" style="background: gray; color: white; padding: 3px 8px; border-radius: 10px;">
+							Show Log
+						</div>
+
+						<div id="id01" class="w3-modal">
+							<div class="w3-modal-content">
+							<div class="w3-container">
+								<span onclick="document.getElementById('id01').style.display='none'" 
+									class="w3-button w3-display-topright">&times;
+								</span>
+								<h2>Device Log</h2>
+								<p>Some text. Some text. Some text.</p>
+							</div>
+							</div>
+						</div>
 					</div>
 				`
 		})
@@ -104,4 +119,33 @@ function showOptions(index) {
 		},
 		{ name: 'Cancel', action: () => { } },
 	)
+}
+
+function showLog(index) {
+	const target = devices[index]
+	console.log("target", target)
+
+	let startTime = Date.now()
+
+	service_getDeviceLog(target.uuid, (result)=>{
+		const RECORD_SIZE = 10
+		const recordCount = Math.floor(result.byteLength / RECORD_SIZE)
+		const dataView = new DataView(result)
+		console.log('Response time:', Date.now() - startTime, 'ms')
+		console.log('Record count:', recordCount)
+
+		let timestamp = 0
+		for (let i = 0; i < recordCount; i++) {
+			timestamp = dataView.getUint32(i * RECORD_SIZE, true)
+			const value = dataView.getUint16(i * RECORD_SIZE + 4, true)
+			const value2 = dataView.getUint16(i * RECORD_SIZE + 6, true)
+			const value3 = dataView.getUint16(i * RECORD_SIZE + 8, true)
+		}
+
+		console.log("last Timestamp", timestamp)
+		const date = new Date(timestamp*1000)
+		console.log("last Time", date.toLocaleString())
+
+		// document.getElementById('id01').style.display='block'
+	})
 }

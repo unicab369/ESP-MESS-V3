@@ -183,7 +183,7 @@ rotate_log_t system_log = {
 	.lines = 0,
 	.prefix = "sys",
 	.CLOSE_LINES = 20,
-	.MAX_LINES = 200
+	.MAX_LINES = 10000
 };
 
 rotate_log_t error_log = {
@@ -192,7 +192,7 @@ rotate_log_t error_log = {
 	.lines = 0,
 	.prefix = "err",
 	.CLOSE_LINES = 5,
-	.MAX_LINES = 200
+	.MAX_LINES = 10000
 };
 
 // why: rotate log between 2 files, prevent opening file too many times because it is slow

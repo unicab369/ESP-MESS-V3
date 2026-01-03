@@ -228,10 +228,10 @@ async function esp_reloadData(chart_id) {
 		let startTime = Date.now()
 
 		const params = new URLSearchParams({
-			dev: chart_id,					// device
-			yr: today.getFullYear(),						// year
-			mth: today.getMonth() + 1,						// month
-			day: today.getDate(),						// day
+			dev: chart_id,							// device
+			yr: today.getFullYear(),				// year
+			mth: today.getMonth() + 1,				// month
+			day: today.getDate(),					// day
 			win: get_timeWindow(chart_id).value 	// time window
 		})
 		console.log('Fetching data:', params.toString())

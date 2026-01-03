@@ -64,3 +64,33 @@ async function service_startScan(onComplete) {
 		}
 	})
 }
+
+async function service_getDeviceLog(chart_id, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	const params = new URLSearchParams({
+		pa: chart_id,
+		pb: 2026,
+		pc: "new_1.bin"
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/g_log?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: red', resp.url)
+
+		if (resp.ok) {
+			const result = await resp.arrayBuffer()
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
+}

@@ -13,3 +13,6 @@ idf_component_register(
         mod_sd
         mod_network
 )
+
+
+littlefs_create_partition_image(storage ../flash_data FLASH_IN_PROJECT)

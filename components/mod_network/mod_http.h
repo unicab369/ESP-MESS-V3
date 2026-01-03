@@ -284,13 +284,13 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &scan_uri);
 
-		httpd_uri_t esp_log_url = {
-			.uri	  = "/esp_log",
+		httpd_uri_t get_log_uri = {
+			.uri	  = "/g_log",
 			.method   = HTTP_GET,
 			.handler  = HTTP_GET_LOG_HANDLER,
 			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &esp_log_url);
+		httpd_register_uri_handler(server, &get_log_uri);
 
 		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
 	} else {
