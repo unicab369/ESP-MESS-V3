@@ -53,30 +53,9 @@ esp_err_t sd_write(const char *path, char *buff) {
 	return ESP_OK;
 }
 
-esp_err_t sd_get(const char *path, char *buff, size_t len) {
-	ESP_LOGI(TAG_SD, "Reading file %s", path);
-	file = fopen(path, "r");
-	if (file == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading");
-		return ESP_FAIL;
-	}
-
-	// Reads a line of text from a file (up to a specified number of characters 
-	// or until a newline is encountered).
-	fgets(buff, len, file);
-	fclose(file);
-
-	// strip newline
-	char *pos = strchr(buff, '\n');
-	if (pos) *pos = '\0';
-	ESP_LOGI(TAG_SD, "Read from file: '%s'", buff);
-
-	return ESP_OK;
-}
-
 void sd_test(void) {	
 	//# First create a file.
-	const char *file_hello = MOUNT_POINT"/hello.txt";
+	const char *file_hello = SD_POINT"/hello.txt";
 	char data[MAX_CHAR_SIZE];
 
 	snprintf(data, MAX_CHAR_SIZE, "%s!\n", "Hello ... Hello ... ");
@@ -84,7 +63,7 @@ void sd_test(void) {
 	if (ret != ESP_OK) return;
 
 	//# Check if destination file exists before renaming
-	const char *file_foo = MOUNT_POINT"/foo2.txt";
+	const char *file_foo = SD_POINT"/foo2.txt";
 	struct stat st;
 	if (stat(file_foo, &st) == 0) {
 		// Delete it if it exists
@@ -99,18 +78,17 @@ void sd_test(void) {
 	}
 
 	char line[MAX_CHAR_SIZE];
-	ret = sd_get(file_foo, line, sizeof(line));
-	if (ret != ESP_OK) return;
+	size_t len = sd_read_file(file_foo, line, sizeof(line));
+	if (len < 1) return;
 
-	const char *file_nihao = MOUNT_POINT"/nihao.txt";
+	const char *file_nihao = SD_POINT"/nihao.txt";
 	memset(data, 0, MAX_CHAR_SIZE);
 	snprintf(data, MAX_CHAR_SIZE, "%s!\n", "Nihao");
 	ret = sd_write(file_nihao, data);
 	if (ret != ESP_OK) return;
 
 	//# Open file for reading
-	ret = sd_get(file_foo, line, sizeof(line));
-	if (ret != ESP_OK) return;
+	len = sd_read_file(file_foo, line, sizeof(line));
 
 	//	 // Deinitialize the power control driver if it was used
 	// #if CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_INTERNAL_IO
@@ -197,21 +175,21 @@ static void rotate_timeLog_write(
 		if (target->uuid != uuid || target->config == 0) continue;
 
 		//# 1. Create UUID directory: /log/<uuid>
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
 			continue;
 		}
 
 		//# 2. Create year directory: /log/<uuid>/2025
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
 			continue;
 		}
 
 		//# 3. Create rotation file: /log/<uuid>/2025/new_#.bin
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/new_%d.bin", 
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/new_%d.bin", 
 				uuid, year, target->rotation);
 
         if (target->last_log_rotation_sec == 0 || 
@@ -237,7 +215,7 @@ static void rotate_timeLog_write(
 		if (target->last_minute_update_sec == 0 || 
 			time_ref - target->last_minute_update_sec >= 60
 		) {
-			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%02d%02d.bin", 
+			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
 				uuid, year, month, day
 			);
 
@@ -277,21 +255,21 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 		if (target->uuid != uuid || target->config == 0) continue;
 
 		//# /log/<uuid>
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX", uuid);
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
 			continue;
 		}
 
 		//# /log/<uuid>/2025
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d", uuid, year);
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
 			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
 			continue;
 		}
 
 		uint32_t time_dif = time_ref - target->last_log_rotation_sec;
-		snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/latest.bin", uuid, year);
+		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/latest.bin", uuid, year);
 
 		//# replace the 1 second records for every hour (3600 records)
 		if (target->last_log_rotation_sec == 0 || time_dif > 3600) {
@@ -316,7 +294,7 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 			};
 
 			//# STEP2: `/log/<uuid>/2025/1230.bin`
-			snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%08lX/%d/%02d%02d.bin", 
+			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
 				uuid, year, month, day
 			);
 			sd_append_bin(file_path, record, sizeof(record_t));
@@ -348,7 +326,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 		}
 	}
 
-	const char *file_path = MOUNT_POINT"/log/config.txt";
+	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
 		ESP_LOGE_SD(TAG_SD, "Err write: %s", file_path);
@@ -369,7 +347,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 }
 
 static esp_err_t sd_load_config() {
-	const char *file_path = MOUNT_POINT"/log/config.txt";
+	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
 		ESP_LOGE_SD(TAG_SD, "Err read: %s", file_path);
@@ -467,7 +445,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 // Function to read and verify binary data
 size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size_t max_records) {
 	char file_path[64];
-	snprintf(file_path, sizeof(file_path), MOUNT_POINT"/log/%s/%s.bin", uuid, dateStr);
+	snprintf(file_path, sizeof(file_path), SD_POINT"/log/%s/%s.bin", uuid, dateStr);
 
 	FILE *f = fopen(file_path, "rb");
 	if (f == NULL) {

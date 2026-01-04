@@ -80,4 +80,8 @@ add this to idf_component.yml: `joltwallet/littlefs: "~=1.20.3"`
 ## add LittleFS partition manually
 add this to `CMakeLists.txt` under the `main` folder:
 littlefs_create_partition_image(storage ../flash_data FLASH_IN_PROJECT)
-create `flash_data` folder (or your custom folder name) under the main project folder  
+create `flash_data` folder (or your custom folder name) under the main project folder
+
+## Memory Analytic
+idf.py size
+idf.py size-components

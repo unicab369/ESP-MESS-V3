@@ -44,12 +44,12 @@
 		<div class="chart-card">
 			<div class="chart-title">📋 Scan Results</div>
 			
-			<div style="margin-bottom: 15px; display: flex; gap: 10px;">
-				<button class="btn" onclick="startScan()">
-					🔍 Scan Now
-				</button>
+			<div style="margin-bottom: 15px; display: flex; gap: 20px; font-size: 18px; color: blue;">
+				<a href="#" onclick="loadEntry()">/log</a>
+				<a href="#" onclick="loadEntry()">/nvs</a>
+				<a href="#" onclick="loadEntry('litFS')">/littleFS</a>
 			</div>
-			
+
 			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
 									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 				<div style="text-align: center; padding: 20px; color: #666;">
@@ -59,6 +59,9 @@
 			
 			<div id="item-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
 
+			<!-- <div style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+				<button class="btn" onclick="startScan()">🔄 Refresh</button>
+			</div> -->
 		</div>
 	</div>
 
@@ -80,45 +83,55 @@
 			console.log("entries", entries)
 
 			service_getFiles(sub_entry, (result) => {
-				// Sort folders first
-				const sorted = result.sort((a, b) => {
-					const aIsFolder = !a.includes('.')
-					const bIsFolder = !b.includes('.')
-					
-					// If one is folder and other isn't, folder comes first
-					if (aIsFolder && !bIsFolder) return -1
-					if (!aIsFolder && bIsFolder) return 1
-					
-					// Both are same type, sort alphabetically
-					return a.localeCompare(b)
-				})
+				let html = /*html*/
+					`
+						<div onclick="backEntry()" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+							<div>⬅️ Back</div>
+						</div>
+					`
 
-				let html = '';
-				
-				if (sub_entry.length > 0) {
+				const is_text = sub_entry.toUpperCase().includes('.TXT')
+
+				if (is_text) {
 					html += /*html*/
 						`
-							<div onclick="backEntry()" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-								<div>⬅️ Back</div>
+							<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+								<div style="white-space: pre-wrap;">${result}</div>
 							</div>
 						`
 				}
-
-				// Update UI
-				if (sorted.length === 0) {
-					html += '<div style="text-align: center; padding: 20px; color: #666;">No Files found</div>';
-				} else {
-					sorted.forEach((item, index) => {
-						const prefix = item.includes('.') ? '📄' : '📁';
-						html += /*html*/
-							`
-								<div onclick="loadEntry('${item}')" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-									<div>${prefix} ${item}</div>
-								</div>
-							`
+				else {
+					if (sub_entry.length < 1) html += ``
+					
+					// Sort folders first
+					const sorted = result.sort((a, b) => {
+						const aIsFolder = !a.includes('.')
+						const bIsFolder = !b.includes('.')
+						
+						// If one is folder and other isn't, folder comes first
+						if (aIsFolder && !bIsFolder) return -1
+						if (!aIsFolder && bIsFolder) return 1
+						
+						// Both are same type, sort alphabetically
+						return a.localeCompare(b)
 					})
-				}
 
+					// Update UI
+					if (sorted.length === 0) {
+						html += '<div style="text-align: center; padding: 20px; color: #666;">No Files found</div>';
+					} else {
+						sorted.forEach((item, index) => {
+							const prefix = item.includes('.') ? '📄' : '📁';
+							html += /*html*/
+								`
+									<div onclick="loadEntry('${item}')" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+										<div>${prefix} ${item}</div>
+									</div>
+								`
+						})
+					}
+				}
+				
 				document.getElementById('list-container').innerHTML = html
 			})
 		}

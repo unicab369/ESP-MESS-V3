@@ -6,7 +6,7 @@
 
 #include "esp_log.h"
 
-#define MOUNT_POINT "/sdcard"
+#define SD_POINT "/sdcard"
 static const char *TAG_LOG_SD = "[LOG_SD]";
 
 esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin);
@@ -17,6 +17,8 @@ int sd_overwrite_bin(const char *path, void *data, int data_len);
 int sd_append_bin(const char *path, void *data, int data_len);
 int sd_entries_to_json(const char *path, char *json, int size);
 void sd_list_dirs(const char *base_path, int depth);
+size_t sd_read_file(const char *path, char *buff, size_t len);
+size_t sd_read_tail(const char *path, char *out, size_t max);
 
 typedef struct {
 	FILE *file;

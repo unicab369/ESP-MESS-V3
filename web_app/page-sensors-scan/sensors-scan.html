@@ -47,24 +47,23 @@
 		<div class="chart-card">
 			<div class="chart-title">📋 Scan Results</div>
 			
-			<div style="margin-bottom: 15px; display: flex; gap: 10px;">
-				<button class="btn" onclick="startScan()">
-					🔍 Scan Now
-				</button>
-				<button onclick="clearDevices()" style="padding: 8px 15px; background: #f44336; 
-											color: white; border: none; border-radius: 6px; cursor: pointer;">
-					🗑️ Clear
-				</button>
-			</div>
-			
 			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
 									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 				<div style="text-align: center; padding: 20px; color: #666;">
 					No devices found
 				</div>
 			</div>
-			
+
 			<div id="list-footer" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
+
+			<div style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+				<button class="btn" onclick="startScan()">🔍 Scan Now</button>
+
+				<button onclick="clearDevices()" style="padding: 8px 15px; background: #f44336; 
+											color: white; border: none; border-radius: 6px; cursor: pointer;">
+					🗑️ Clear
+				</button>
+			</div>
 		</div>
 	</div>
 

@@ -100,9 +100,10 @@ async function service_getFiles(entry, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
+	const is_text = entry.toUpperCase().includes('.TXT')
 	const params = new URLSearchParams({
 		sub: entry,
-		txt: entry.toUpperCase().includes('.TXT') ? 1 : 0
+		txt: is_text ? 1 : 0
 	})
 
 	try {
@@ -113,7 +114,7 @@ async function service_getFiles(entry, onComplete) {
 		console.log('%crequest: %s', 'color: red', resp.url)
 
 		if (resp.ok) {
-			const result = await resp.json()
+			const result = await (is_text ? resp.text() : resp.json())
 			console.log('%cresult:', 'color: red', result)
 			onComplete?.(result)
 		} else {

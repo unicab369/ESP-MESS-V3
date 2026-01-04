@@ -1,11 +1,13 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 
+#define LITTLEFS_POINT "/littlefs"
+
 static const char *TAG_LITFS = "[LitFS]";
 
-void littlefs_test() {
+void littleFS_init() {
 	esp_vfs_littlefs_conf_t conf = {
-		.base_path = "/littlefs",
+		.base_path = LITTLEFS_POINT,
 		.partition_label = "storage",
 		.format_if_mount_failed = true,
 		.dont_mount = false,
@@ -33,9 +35,11 @@ void littlefs_test() {
 	} else {
 		ESP_LOGW(TAG_LITFS, "LittleFS partition total: %d, used: %d", total, used);
 	}
+}
 
+void littleFS_test() {
 	ESP_LOGW(TAG_LITFS, "Opening file");
-	FILE *f = fopen("/littlefs/hello.txt", "w");
+	FILE *f = fopen(LITTLEFS_POINT"/hello.txt", "w");
 	if (f == NULL) {
 		ESP_LOGE(TAG_LITFS, "Failed to open file for writing");
 		return;
@@ -46,21 +50,21 @@ void littlefs_test() {
 
 	// Check if destination file exists before renaming
 	struct stat st;
-	if (stat("/littlefs/foo.txt", &st) == 0) {
+	if (stat(LITTLEFS_POINT"/foo.txt", &st) == 0) {
 		// Delete it if it exists
-		unlink("/littlefs/foo.txt");
+		unlink(LITTLEFS_POINT"/foo.txt");
 	}
 
 	// Rename original file
 	ESP_LOGW(TAG_LITFS, "Renaming file");
-	if (rename("/littlefs/hello.txt", "/littlefs/foo.txt") != 0) {
+	if (rename(LITTLEFS_POINT"/hello.txt", LITTLEFS_POINT"/foo.txt") != 0) {
 		ESP_LOGE(TAG_LITFS, "Rename failed");
 		return;
 	}
 
 	// Open renamed file for reading
 	ESP_LOGW(TAG_LITFS, "Reading file");
-	f = fopen("/littlefs/foo.txt", "r");
+	f = fopen(LITTLEFS_POINT"/foo.txt", "r");
 	if (f == NULL) {
 		ESP_LOGE(TAG_LITFS, "Failed to open file for reading");
 		return;
@@ -77,7 +81,7 @@ void littlefs_test() {
 	ESP_LOGW(TAG_LITFS, "Read from file: '%s'", line);
 
 	ESP_LOGW(TAG_LITFS, "Reading from flashed filesystem example.txt");
-	f = fopen("/littlefs/example.txt", "r");
+	f = fopen(LITTLEFS_POINT"/example.txt", "r");
 	if (f == NULL) {
 		ESP_LOGE(TAG_LITFS, "Failed to open file for reading");
 		return;
@@ -92,6 +96,7 @@ void littlefs_test() {
 	ESP_LOGW(TAG_LITFS, "Read from file: '%s'", line);
 
 	// All done, unmount partition and disable LittleFS
-	esp_vfs_littlefs_unregister(conf.partition_label);
-	ESP_LOGW(TAG_LITFS, "LittleFS unmounted");
+	// esp_vfs_littlefs_unregister(conf.partition_label);
+	// esp_vfs_littlefs_unregister("storage");
+	// ESP_LOGW(TAG_LITFS, "LittleFS unmounted");
 }

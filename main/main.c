@@ -15,7 +15,7 @@
 #include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
-#include "lib_littlefs_log.h"
+#include "mod_littlefs_log.h"
 
 
 #define LED_PIN 22
@@ -196,7 +196,7 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	int size = atoi(size_str);
 
 	char full_path[64];
-	snprintf(full_path, sizeof(full_path), MOUNT_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
+	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
 
 	return send_http_file(req, full_path);
 }
@@ -256,9 +256,9 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	//# Fetch data from SD card
 	char path_str[64];
 	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
-		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
 	} else {
-		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s/%s/latest.bin", device_id, year);
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/latest.bin", device_id, year);
 	}
 
 	return send_http_file(req, path_str);
@@ -279,33 +279,36 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "sub", entry_str, sizeof(entry_str));
 		httpd_query_key_value(query, "txt", txt_str, sizeof(txt_str));
-		httpd_query_key_value(query, "bin", txt_str, sizeof(bin_str));
+		httpd_query_key_value(query, "bin", bin_str, sizeof(bin_str));
 	}
 
 	int is_txt = atoi(txt_str);
 	int is_bin = atoi(bin_str);
-	char output[512];
-	char path_str[64] = MOUNT_POINT"/log";
+	char path_str[64] = SD_POINT"/log";
+	char output[1024] = {0};
 
-	if (strlen(entry_str) > 0) {
-		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s", entry_str);
-
-		if (is_txt || is_bin) {
-			printf("path_str: %s\n", path_str);
-			httpd_resp_set_type(req, "text/plain");
-			return send_http_file(req, path_str);
-		}
+	if (strcmp(entry_str, "litFS") == 0) {
+		snprintf(path_str, sizeof(path_str), LITTLEFS_POINT);
+	}
+	else if (strlen(entry_str) > 0) {
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s", entry_str);
 	}
 
-	int len = sd_entries_to_json(path_str, output, sizeof(output));
-	printf("output1: %s\n", output);
-	printf("path_str: %s\n", path_str);
+	int len = 0;
+	if (is_txt || is_bin) {
+		httpd_resp_set_type(req, "text/plain");
+		len = sd_read_tail(path_str, output, sizeof(output));
+	} else {
+		len = sd_entries_to_json(path_str, output, sizeof(output));
+	}
+	ESP_LOGW_SD(TAG_HTTP, "path %s", path_str);
 
 	return httpd_resp_send(req, output, len);
 }
 
 void app_main(void) {
-	littlefs_test();
+	littleFS_init();
+	littleFS_test();
 
 	SD_MUTEX = xSemaphoreCreateMutex();
 
@@ -344,7 +347,7 @@ void app_main(void) {
 	//# Set Logs level
 	// esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
 	// esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
-	// esp_log_level_set(TAG, ESP_LOG_NONE);
+	esp_log_level_set(TAG, ESP_LOG_NONE);
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
@@ -356,14 +359,25 @@ void app_main(void) {
 			//# Delete log folder
 			int mode = gpio_get_level(MODE_PIN);
 			if (mode == 0) {
-				sd_remove_dir(MOUNT_POINT"/log2");
+				sd_remove_dir(SD_POINT"/log2");
 			}
 
-			if (!sd_ensure_dir(MOUNT_POINT"/log")) {
+			if (!sd_ensure_dir(SD_POINT"/log")) {
 				ESP_LOGE(TAG_SD, "Err create /log");
 			}
 
 			sd_load_config();
+
+			sd_list_dirs(SD_POINT"/log", 4);
+			sd_list_dirs(LITTLEFS_POINT, 4);
+
+		// 	int64_t time_ref;
+		// 	char output[512];
+
+		// 	time_ref = esp_timer_get_time();
+		// 	sd_read_file(SD_POINT"/log/config.txt", output, sizeof(output));
+		// 	printf("time_dif2: %lld\n", esp_timer_get_time() - time_ref);
+		// 	printf("output2: %s\n", output);
 		}
 	}
 

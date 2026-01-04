@@ -70,7 +70,7 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 	};
 
 	//# Mounting SD card
-	esp_err_t ret = esp_vfs_fat_sdspi_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
+	esp_err_t ret = esp_vfs_fat_sdspi_mount(SD_POINT, &host, &slot_config, &mount_config, &card);
     printf("card name: %s", card->cid.name);
 	return check_sd_card(ret);
 }
@@ -149,14 +149,14 @@ void sd_mmc_config(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8
 	//	 .allocation_unit_size = 16 * 1024
 	// };
 
-	// ret = esp_vfs_fat_sdmmc_mount(MOUNT_POINT, &host, &slot_config, &mount_config, &card);
+	// ret = esp_vfs_fat_sdmmc_mount(SD_POINT, &host, &slot_config, &mount_config, &card);
 	// check_sd_card(ret);
 }
 
 
 //# Format Card
 void storage_sd_format_card() {
-	esp_err_t ret = esp_vfs_fat_sdcard_format(MOUNT_POINT, card);
+	esp_err_t ret = esp_vfs_fat_sdcard_format(SD_POINT, card);
 	if (ret != ESP_OK) {
 		ESP_LOGE(TAG_LOG_SD, "Err: format FATFS (%s)", esp_err_to_name(ret));
 		return;
@@ -166,11 +166,60 @@ void storage_sd_format_card() {
 //# Unmount card
 void mod_sd_deinit(spi_host_device_t slot) {
 	// unmount partition and disable SPI peripheral
-	esp_vfs_fat_sdcard_unmount(MOUNT_POINT, card);
+	esp_vfs_fat_sdcard_unmount(SD_POINT, card);
 	ESP_LOGI(TAG_LOG_SD, "Card unmounted");
 
 	// deinitialize the bus after all devices are removed
 	spi_bus_free(slot);
+}
+
+size_t sd_read_file(const char *path, char *buff, size_t len) {
+	FILE *f = fopen(path, "r");
+    if (!f) {
+		ESP_LOGE_SD(TAG_LOG_SD, "Err sd_read_file: %s", path);
+		return 0;
+	}
+	
+	// Read directly with manual tracking
+	size_t count = 0;
+	int c;
+	
+	// -1 to leave room for null terminator
+	while (count < len - 1 && (c = fgetc(f)) != EOF) {
+		buff[count++] = c;
+	}
+	
+	buff[count] = '\0';
+	fclose(f);
+	return count;
+}
+
+size_t sd_read_tail(const char *path, char *out, size_t max) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+		ESP_LOGE_SD(TAG_LOG_SD, "Err sd_read_tail: %s", path);
+		return 0;
+	}
+    
+    // All in local registers where possible
+    long sz;
+    fseek(f, 0, SEEK_END);
+    sz = ftell(f);
+    
+    if (sz <= 0) {
+        fclose(f);
+        out[0] = '\0';
+        return 0;
+    }
+    
+    // Single conditional
+    size_t n = (sz < max) ? sz : max;
+    fseek(f, -n, SEEK_END);
+    n = fread(out, 1, n, f);  // Reuse n for actual read count
+    
+    fclose(f);
+    out[n] = '\0';
+    return n;
 }
 
 //###################################################
@@ -217,7 +266,7 @@ void rotate_log_write(rotate_log_t *log, const char *msg) {
 		
 		// Open current file
 		char path[64];
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
+		snprintf(path, sizeof(path), SD_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
 		log->file = fopen(path, log->lines == 0 ? "w" : "a");
 
 		if (!log->file) {
@@ -248,7 +297,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 
 	//# File 1:  Read from current file
 	char path[64];
-	snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
+	snprintf(path, sizeof(path), SD_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
 
 	FILE *f = fopen(path, "r");
 	if (f) {
@@ -270,7 +319,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 	if (total < buffer_size && ROTATE_LOG_FILE_COUNT > 1) {
 		int prev = (log->file_num - 1 + ROTATE_LOG_FILE_COUNT) % ROTATE_LOG_FILE_COUNT;
 
-		snprintf(path, sizeof(path), MOUNT_POINT"/log/%s_%d.txt", log->prefix, prev);
+		snprintf(path, sizeof(path), SD_POINT"/log/%s_%d.txt", log->prefix, prev);
 		f = fopen(path, "r");
 
 		if (f) {
@@ -424,7 +473,7 @@ void sd_list_dirs(const char *base_path, int depth) {
 	char path[512];
 
 	if (!(dir = opendir(base_path))) {
-		ESP_LOGE_SD(TAG_LOG_SD, "Could not open directory: %s", base_path);
+		ESP_LOGE(TAG_LOG_SD, "Could not open directory: %s", base_path);
 		return;
 	}
 
@@ -436,7 +485,7 @@ void sd_list_dirs(const char *base_path, int depth) {
 		
 		// Get file/directory information
 		if (stat(path, &file_stat) == -1) {
-			ESP_LOGE_SD(TAG_LOG_SD, "Failed to stat %s", path);
+			ESP_LOGW(TAG_LOG_SD, "Failed to stat %s", path);
 			continue;
 		}
 		
@@ -447,13 +496,13 @@ void sd_list_dirs(const char *base_path, int depth) {
 		
 		if (S_ISDIR(file_stat.st_mode)) {
 			// It's a directory
-			ESP_LOGE_SD(TAG_LOG_SD, "%s📁 %s/", indent, entry->d_name);
+			ESP_LOGW(TAG_LOG_SD, "%s📁 %s/", indent, entry->d_name);
 			
 			// Recursively list subdirectory
 			sd_list_dirs(path, depth + 1);
 		} else {
 			// It's a file
-			ESP_LOGE_SD(TAG_LOG_SD, "%s📄 %s (Size: %ld bytes)", indent, entry->d_name, file_stat.st_size);
+			ESP_LOGW(TAG_LOG_SD, "%s📄 %s (Size: %ld bytes)", indent, entry->d_name, file_stat.st_size);
 		}
 	}
 
@@ -477,7 +526,9 @@ int sd_entries_to_json(const char *path, char *json, int size) {
 	
 	// NO stat() calls at all!
 	while ((entry = readdir(dir)) != NULL && ptr < json + size - 4) {
-		if (entry->d_name[0] == '.') continue;
+		printf("Entry: %s\n", entry->d_name);
+
+		// if (entry->d_name[0] == '.') continue;
 		// if (entry->d_type != DT_DIR) continue;		// filter for folders ONLY
 		
 		if (!first) *ptr++ = ',';
