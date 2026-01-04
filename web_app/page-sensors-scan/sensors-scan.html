@@ -7,18 +7,16 @@
 	<!-- <link rel="stylesheet" href="../lib/spectre-0.5.9/dist/spectre.min.css">
 	<link rel="stylesheet" href="../lib/spectre-0.5.9/dist/spectre-exp.min.css"> -->
 	<link rel="stylesheet" href="../lib/w3.css">
-	<link rel="stylesheet" href="sensors-scan-style.css">
+	<link rel="stylesheet" href="page-style.css">
 </head>
 <body>
 	<div class="dashboard">
 		<div class="header">
 			<div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
-				<a href="../sensors/sensors.html">
-					<button style="padding: 8px 12px; background: #f0f0f0; border: none; 
-									border-radius: 6px; cursor: pointer;">
-						← Back
-					</button>
-				</a>
+				<button onclick="history.back()" style="padding: 8px 12px; background: #f0f0f0; 
+							border: none; border-radius: 6px; cursor: pointer;">
+					← Back
+				</button>
 				<h1 style="margin: 0;"> 🔄 sensors Scanner</h1>
 			</div>
 
@@ -38,6 +36,9 @@
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
+				<a href="../page-file-explorer/file-explorer.html">
+					<button class="btn">View Files</button>
+				</a>
 			</div>
 		</div>
 
@@ -56,24 +57,23 @@
 				</button>
 			</div>
 			
-			<div id="devicesList" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
+			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
 									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 				<div style="text-align: center; padding: 20px; color: #666;">
 					No devices found
 				</div>
 			</div>
 			
-			<div id="devInfos-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
-
+			<div id="list-footer" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
 		</div>
 	</div>
 
 	<!-- scripts -->
-	<script src="sensors-scan-script.js"></script>
+	<script src="page-script.js"></script>
 	<script src="../scripts/RequestScheduler.js"></script>
 	<script src="../scripts/RequestServices.js"></script>
 
-	<script>		
+	<script>
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', async function() {
 			startScan()

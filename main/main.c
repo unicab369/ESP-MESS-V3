@@ -15,7 +15,8 @@
 #include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
-#include "esp_littlefs.h"
+#include "lib_littlefs_log.h"
+
 
 #define LED_PIN 22
 #define MODE_PIN 12
@@ -205,11 +206,11 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 // STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
 
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
 	char query[128];
-    char device_id[9] = {0};
+	char device_id[9] = {0};
 	char year[5] = {0};
 	char month[3] = {0};
 	char day[3] = {0};
@@ -263,100 +264,44 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	return send_http_file(req, path_str);
 }
 
-void littlefs_test() {
-	esp_vfs_littlefs_conf_t conf = {
-        .base_path = "/littlefs",
-        .partition_label = "storage",
-        .format_if_mount_failed = true,
-        .dont_mount = false,
-    };
+esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "application/json");
 
-    // Use settings defined above to initialize and mount LittleFS filesystem.
-    // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
-    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+	char query[128];
+	char entry_str[16] = {0};
+	char txt_str[4] = {0};
+	char bin_str[4] = {0};
 
-    if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        } else if (ret == ESP_ERR_NOT_FOUND) {
-            ESP_LOGE(TAG, "Failed to find LittleFS partition");
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
-        }
-        return;
-    }
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
 
-    size_t total = 0, used = 0;
-    ret = esp_littlefs_info(conf.partition_label, &total, &used);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
-        esp_littlefs_format(conf.partition_label);
-    } else {
-        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
-    }
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "sub", entry_str, sizeof(entry_str));
+		httpd_query_key_value(query, "txt", txt_str, sizeof(txt_str));
+		httpd_query_key_value(query, "bin", txt_str, sizeof(bin_str));
+	}
 
-    // Use POSIX and C standard library functions to work with files.
-    // First create a file.
-    ESP_LOGI(TAG, "Opening file");
-    FILE *f = fopen("/littlefs/hello.txt", "w");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file for writing");
-        return;
-    }
-    fprintf(f, "Hello World!\n");
-    fclose(f);
-    ESP_LOGI(TAG, "File written");
+	int is_txt = atoi(txt_str);
+	int is_bin = atoi(bin_str);
+	char output[512];
+	char path_str[64] = MOUNT_POINT"/log";
 
-    // Check if destination file exists before renaming
-    struct stat st;
-    if (stat("/littlefs/foo.txt", &st) == 0) {
-        // Delete it if it exists
-        unlink("/littlefs/foo.txt");
-    }
+	if (strlen(entry_str) > 0) {
+		snprintf(path_str, sizeof(path_str), MOUNT_POINT"/log/%s", entry_str);
 
-    // Rename original file
-    ESP_LOGI(TAG, "Renaming file");
-    if (rename("/littlefs/hello.txt", "/littlefs/foo.txt") != 0) {
-        ESP_LOGE(TAG, "Rename failed");
-        return;
-    }
+		if (is_txt || is_bin) {
+			printf("path_str: %s\n", path_str);
+			httpd_resp_set_type(req, "text/plain");
+			return send_http_file(req, path_str);
+		}
+	}
 
-    // Open renamed file for reading
-    ESP_LOGI(TAG, "Reading file");
-    f = fopen("/littlefs/foo.txt", "r");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file for reading");
-        return;
-    }
+	int len = sd_entries_to_json(path_str, output, sizeof(output));
+	printf("output1: %s\n", output);
+	printf("path_str: %s\n", path_str);
 
-    char line[128] = {0};
-    fgets(line, sizeof(line), f);
-    fclose(f);
-    // strip newline
-    char* pos = strpbrk(line, "\r\n");
-    if (pos) {
-        *pos = '\0';
-    }
-    ESP_LOGI(TAG, "Read from file: '%s'", line);
-
-    ESP_LOGI(TAG, "Reading from flashed filesystem example.txt");
-    f = fopen("/littlefs/example.txt", "r");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file for reading");
-        return;
-    }
-    fgets(line, sizeof(line), f);
-    fclose(f);
-    // strip newline
-    pos = strpbrk(line, "\r\n");
-    if (pos) {
-        *pos = '\0';
-    }
-    ESP_LOGI(TAG, "Read from file: '%s'", line);
-
-    // All done, unmount partition and disable LittleFS
-    esp_vfs_littlefs_unregister(conf.partition_label);
-    ESP_LOGI(TAG, "LittleFS unmounted");
+	return httpd_resp_send(req, output, len);
 }
 
 void app_main(void) {

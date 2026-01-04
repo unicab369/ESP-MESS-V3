@@ -411,3 +411,87 @@ int sd_append_bin(const char *path, void *data, int data_len) {
 	ESP_LOGI_SD(TAG_LOG_SD, "written: %s", path);
 	return 1;
 }
+
+
+//###################################################
+//# Get entries and Folders
+//###################################################
+
+void sd_list_dirs(const char *base_path, int depth) {
+	DIR *dir;
+	struct dirent *entry;
+	struct stat file_stat;
+	char path[512];
+
+	if (!(dir = opendir(base_path))) {
+		ESP_LOGE_SD(TAG_LOG_SD, "Could not open directory: %s", base_path);
+		return;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		// Skip current and parent directory entries
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+		// Create full path
+		snprintf(path, sizeof(path), "%s/%s", base_path, entry->d_name);
+		
+		// Get file/directory information
+		if (stat(path, &file_stat) == -1) {
+			ESP_LOGE_SD(TAG_LOG_SD, "Failed to stat %s", path);
+			continue;
+		}
+		
+		// Create indentation for hierarchy
+		char indent[32];
+		memset(indent, ' ', depth * 2);
+		indent[depth * 2] = '\0';
+		
+		if (S_ISDIR(file_stat.st_mode)) {
+			// It's a directory
+			ESP_LOGE_SD(TAG_LOG_SD, "%s📁 %s/", indent, entry->d_name);
+			
+			// Recursively list subdirectory
+			sd_list_dirs(path, depth + 1);
+		} else {
+			// It's a file
+			ESP_LOGE_SD(TAG_LOG_SD, "%s📄 %s (Size: %ld bytes)", indent, entry->d_name, file_stat.st_size);
+		}
+	}
+
+	closedir(dir);
+}
+
+
+int sd_entries_to_json(const char *path, char *json, int size) {
+	if (size < 3) return 0;
+	
+	DIR *dir = opendir(path);
+	if (!dir) {
+		json[0] = '['; json[1] = ']'; json[2] = '\0';
+		return 2;
+	}
+	
+	char *ptr = json;
+	*ptr++ = '[';
+	int first = 1;
+	struct dirent *entry;
+	
+	// NO stat() calls at all!
+	while ((entry = readdir(dir)) != NULL && ptr < json + size - 4) {
+		if (entry->d_name[0] == '.') continue;
+		// if (entry->d_type != DT_DIR) continue;		// filter for folders ONLY
+		
+		if (!first) *ptr++ = ',';
+		first = 0;
+		
+		*ptr++ = '"';
+		const char *s = entry->d_name;
+		while (*s && ptr < json + size - 2) *ptr++ = *s++;
+		*ptr++ = '"';
+	}
+	
+	closedir(dir);
+	*ptr++ = ']';
+	*ptr = '\0';
+
+	return ptr - json;
+}

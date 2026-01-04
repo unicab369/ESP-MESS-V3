@@ -19,7 +19,7 @@ function updateDeviceList(device_caches, device_configs) {
 	
 	// Update UI
 	if (devices.length === 0) {
-		document.getElementById('devicesList').innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No devices found</div>';
+		document.getElementById('list-container').innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No devices found</div>';
 	} else {
 		let html = '';
 		devices.forEach((item, index) => {
@@ -66,12 +66,12 @@ function updateDeviceList(device_caches, device_configs) {
 					</div>
 				`
 		})
-		document.getElementById('devicesList').innerHTML = html
+		document.getElementById('list-container').innerHTML = html
 	}
 	
 	// Update counters
 	const onlineCount = devices.filter(d => d.is_online);
-	document.getElementById('devInfos-container').innerHTML = /*html*/
+	document.getElementById('list-footer').innerHTML = /*html*/
 		`
 			<div>Total: <span id="deviceCount">${devices.length}</span></div>
 			<div>Online: <span id="onlineCount">${onlineCount}</span></div>

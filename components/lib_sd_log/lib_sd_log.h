@@ -15,6 +15,8 @@ int sd_remove_dir(const char* path);
 int sd_ensure_dir(const char *path);
 int sd_overwrite_bin(const char *path, void *data, int data_len);
 int sd_append_bin(const char *path, void *data, int data_len);
+int sd_entries_to_json(const char *path, char *json, int size);
+void sd_list_dirs(const char *base_path, int depth);
 
 typedef struct {
 	FILE *file;

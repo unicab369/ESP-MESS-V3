@@ -57,9 +57,15 @@ create `partitions.csv` in the main project folder
 check partition table: `idf.py partition-table`
 flash partition table: `idf.py partition-table-flash`
 
-flash storage: `idf.py -p COM4 flash storage`
-flash app: `idf.py -p COM4 flash app`
+flash app: `idf.py flash app`
 flash all: `idf.py flash monitor`
+
+
+flash storage:
+build first: `idf.py build`
+then flash: `esptool.py write_flash 0x210000 build/storage.bin`
+monitor: `idf.py monitor`
+(Note: depending on partition address)
 
 Example partitions:
 # Name,   Type, SubType,  Offset,  Size, Flags

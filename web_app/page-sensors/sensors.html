@@ -4,7 +4,7 @@
 	<title>ESP32 uPlot Dashboard</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="../lib/uplot/dist/uPlot.min.css">
-	<link rel="stylesheet" href="sensors-style.css">
+	<link rel="stylesheet" href="page-style.css">
 </head>
 <body>
 	<div class="dashboard">
@@ -26,7 +26,7 @@
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
-				<a href="../sensors-scan/sensors-scan.html">
+				<a href="../page-sensors-scan/sensors-scan.html">
 					<button class="btn">Scan Devices</button>
 				</a>
 			</div>
@@ -44,7 +44,7 @@
 	<script src="../lib/uplot/dist/uPlot.iife.min.js"></script>
 	<script src="../scripts/RequestScheduler.js"></script>
 	<script src="../scripts/RequestServices.js"></script>
-	<script src="sensors-script.js"></script>
+	<script src="page-script.js"></script>
 
 	<script>		
 		// Handle window resize

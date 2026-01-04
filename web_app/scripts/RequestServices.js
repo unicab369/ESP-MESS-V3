@@ -94,3 +94,34 @@ async function service_getDeviceLog(chart_id, onComplete) {
 		console.error('Connection error:', error)
 	}
 }
+
+
+async function service_getFiles(entry, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	const params = new URLSearchParams({
+		sub: entry,
+		txt: entry.toUpperCase().includes('.TXT') ? 1 : 0
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/g_files?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: red', resp.url)
+
+		if (resp.ok) {
+			const result = await resp.json()
+			console.log('%cresult:', 'color: red', result)
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)	
+	}
+}

@@ -2,7 +2,7 @@ idf_component_register(
     SRCS "main.c" 
     # SRCS "test_network.c"
     
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS
 
     PRIV_REQUIRES
         driver
