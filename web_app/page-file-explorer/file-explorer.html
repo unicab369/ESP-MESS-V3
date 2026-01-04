@@ -45,9 +45,9 @@
 			<div class="chart-title">📋 Scan Results</div>
 			
 			<div style="margin-bottom: 15px; display: flex; gap: 20px; font-size: 18px; color: blue;">
-				<a href="#" onclick="loadEntry()">/log</a>
+				<a href="#" onclick="loadEntry('*sdcard*log', true)">/log</a>
+				<a href="#" onclick="loadEntry('*littlefs', true)">/littleFS</a>
 				<a href="#" onclick="loadEntry()">/nvs</a>
-				<a href="#" onclick="loadEntry('litFS')">/littleFS</a>
 			</div>
 
 			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
@@ -74,13 +74,24 @@
 		var entries = []
 
 		function backEntry() {
+			if (entries.length < 2) return
 			entries.pop()
-			loadEntry(entries.pop())
+			loadEntry('')
 		}
 
-		function loadEntry(sub_entry = '') {
-			entries.push(sub_entry)
-			console.log("entries", entries)
+		function loadEntry(sub_entry = '*sdcard*log', is_new = true) {
+			if (sub_entry.length > 0)  {
+				if (is_new) {
+					entries = [sub_entry]
+				} else {
+					entries.push(sub_entry)
+				}
+			}
+
+			console.log("entries:", entries)
+
+			sub_entry = entries.join('*')
+			console.log("sub_entry:", sub_entry)
 
 			service_getFiles(sub_entry, (result) => {
 				let html = /*html*/
@@ -101,7 +112,8 @@
 						`
 				}
 				else {
-					if (sub_entry.length < 1) html += ``
+					// show error if there are more than 1 entries
+					if (entries.length < 2) html = ``
 					
 					// Sort folders first
 					const sorted = result.sort((a, b) => {
@@ -124,7 +136,7 @@
 							const prefix = item.includes('.') ? '📄' : '📁';
 							html += /*html*/
 								`
-									<div onclick="loadEntry('${item}')" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+									<div onclick="loadEntry('${item}', false)" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 										<div>${prefix} ${item}</div>
 									</div>
 								`
@@ -138,7 +150,7 @@
 
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', async function() {
-			loadEntry('')
+			loadEntry()
 		});
 		
 		function closeModal() {

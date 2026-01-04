@@ -269,7 +269,7 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_type(req, "application/json");
 
 	char query[128];
-	char entry_str[16] = {0};
+	char entry_str[64] = {0};
 	char txt_str[4] = {0};
 	char bin_str[4] = {0};
 
@@ -282,26 +282,23 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 		httpd_query_key_value(query, "bin", bin_str, sizeof(bin_str));
 	}
 
+	// replace ',' with '/'
+	for (char *p = entry_str; *p; p++) {
+		if (*p == '*') *p = '/';
+	}
+
 	int is_txt = atoi(txt_str);
 	int is_bin = atoi(bin_str);
-	char path_str[64] = SD_POINT"/log";
 	char output[1024] = {0};
-
-	if (strcmp(entry_str, "litFS") == 0) {
-		snprintf(path_str, sizeof(path_str), LITTLEFS_POINT);
-	}
-	else if (strlen(entry_str) > 0) {
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s", entry_str);
-	}
 
 	int len = 0;
 	if (is_txt || is_bin) {
 		httpd_resp_set_type(req, "text/plain");
-		len = sd_read_tail(path_str, output, sizeof(output));
+		len = sd_read_tail(entry_str, output, sizeof(output));
 	} else {
-		len = sd_entries_to_json(path_str, output, sizeof(output));
+		len = sd_entries_to_json(entry_str, output, sizeof(output));
 	}
-	ESP_LOGW_SD(TAG_HTTP, "path %s", path_str);
+	ESP_LOGW_SD(TAG_HTTP, "path %s", entry_str);
 
 	return httpd_resp_send(req, output, len);
 }
@@ -366,18 +363,6 @@ void app_main(void) {
 				ESP_LOGE(TAG_SD, "Err create /log");
 			}
 
-			sd_load_config();
-
-			sd_list_dirs(SD_POINT"/log", 4);
-			sd_list_dirs(LITTLEFS_POINT, 4);
-
-		// 	int64_t time_ref;
-		// 	char output[512];
-
-		// 	time_ref = esp_timer_get_time();
-		// 	sd_read_file(SD_POINT"/log/config.txt", output, sizeof(output));
-		// 	printf("time_dif2: %lld\n", esp_timer_get_time() - time_ref);
-		// 	printf("output2: %s\n", output);
 		}
 	}
 

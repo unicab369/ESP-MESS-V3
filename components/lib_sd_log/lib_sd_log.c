@@ -468,14 +468,14 @@ int sd_append_bin(const char *path, void *data, int data_len) {
 
 void sd_list_dirs(const char *base_path, int depth) {
 	DIR *dir;
-	struct dirent *entry;
-	struct stat file_stat;
-	char path[512];
-
 	if (!(dir = opendir(base_path))) {
 		ESP_LOGE(TAG_LOG_SD, "Could not open directory: %s", base_path);
 		return;
 	}
+
+	struct dirent *entry;
+	struct stat file_stat;
+	char path[512];
 
 	while ((entry = readdir(dir)) != NULL) {
 		// Skip current and parent directory entries
@@ -490,7 +490,7 @@ void sd_list_dirs(const char *base_path, int depth) {
 		}
 		
 		// Create indentation for hierarchy
-		char indent[32];
+		char indent[16];
 		memset(indent, ' ', depth * 2);
 		indent[depth * 2] = '\0';
 		
@@ -510,30 +510,25 @@ void sd_list_dirs(const char *base_path, int depth) {
 }
 
 
-int sd_entries_to_json(const char *path, char *json, int size) {
+int sd_entries_to_json(const char *base_path, char *json, int size) {
 	if (size < 3) return 0;
 	
-	DIR *dir = opendir(path);
+	DIR *dir = opendir(base_path);
 	if (!dir) {
 		json[0] = '['; json[1] = ']'; json[2] = '\0';
 		return 2;
 	}
 	
+	struct dirent *entry;
 	char *ptr = json;
 	*ptr++ = '[';
 	int first = 1;
-	struct dirent *entry;
 	
 	// NO stat() calls at all!
 	while ((entry = readdir(dir)) != NULL && ptr < json + size - 4) {
-		printf("Entry: %s\n", entry->d_name);
-
-		// if (entry->d_name[0] == '.') continue;
-		// if (entry->d_type != DT_DIR) continue;		// filter for folders ONLY
-		
+		// printf("Entry: %s\n", entry->d_name);
 		if (!first) *ptr++ = ',';
 		first = 0;
-		
 		*ptr++ = '"';
 		const char *s = entry->d_name;
 		while (*s && ptr < json + size - 2) *ptr++ = *s++;
