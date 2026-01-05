@@ -271,8 +271,9 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 
 	char query[128];
 	char name_str[11] = {0};
-	char key_str[11] = {0};
-	char val_str[17] = {0};
+	char new_key[11] = {0};
+	char old_key[11] = {0};
+	char val_str[32] = {0};
 	char type_str[4] = {0};
 	char output[1024] = {0};
 
@@ -281,39 +282,138 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "name", name_str, sizeof(name_str));
-		httpd_query_key_value(query, "key", key_str, sizeof(key_str));
+		httpd_query_key_value(query, "new_k", new_key, sizeof(new_key));
+		httpd_query_key_value(query, "old_k", old_key, sizeof(old_key));
 		httpd_query_key_value(query, "val", val_str, sizeof(val_str));
 		httpd_query_key_value(query, "typ", type_str, sizeof(type_str));
 	}
 
 	int type = atoi(type_str);
 	int value = atoi(val_str);
+	size_t len = 0;
+	esp_err_t ret = ESP_OK;
+	int has_old_key = strlen(old_key) > 0;
 
-	esp_err_t ret = mod_nvs_open(name_str);
-	if (ret != ESP_OK) {
-		httpd_resp_set_type(req, "text/plain");
-		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Err mod_nvs_open");
-		return ESP_OK;
+	//# open namespace first
+	if (strlen(name_str) > 0) {
+		ret = mod_nvs_open(name_str);
+		if (ret != ESP_OK) {
+			httpd_resp_set_type(req, "text/plain");
+			httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Err mod_nvs_open");
+			return ESP_OK;
+		}
 	}
-
-	switch (type) {
-		case 1: nvs_set_u8(NVS_HANDLER, key_str, (uint8_t)value); break;
-		case 2: nvs_set_u16(NVS_HANDLER, key_str, (uint16_t)value); break;
-		case 4: nvs_set_u32(NVS_HANDLER, key_str, (uint32_t)value); break;
-		case 8: nvs_set_u64(NVS_HANDLER, key_str, (uint64_t)value); break;
-		case 17: nvs_set_i8(NVS_HANDLER, key_str, value); break;
-		case 18: nvs_set_i16(NVS_HANDLER, key_str, value); break;
-		case 20: nvs_set_i32(NVS_HANDLER, key_str, value); break;
-		case 24: nvs_set_i64(NVS_HANDLER, key_str, value); break;
-		case 33:  nvs_set_str(NVS_HANDLER, key_str, val_str); break;
-		default: break;
+	
+	// Delete if type == 0 and value == 0
+	if (type == 0 && value == 0) {
+		//# Delete - return list
+		if (has_old_key) {
+			nvs_erase_key(NVS_HANDLER, old_key);
+		} else {
+			nvs_erase_all(NVS_HANDLER);
+		}
+		
+		nvs_commit(NVS_HANDLER);
+		nvs_close(NVS_HANDLER);
+		len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
+		return httpd_resp_send(req, output, len);
 	}
+	else if (has_old_key) {
+		// if old_key != new_key then delete okd_key first
+		if (
+			memcmp(new_key, old_key, sizeof(old_key)) != 0
+		) {
+			nvs_erase_key(NVS_HANDLER, old_key);
+		}
 
-	nvs_commit(NVS_HANDLER);
-	nvs_close(NVS_HANDLER);
+		// then set/update
+		switch (type) {
+			case 1: nvs_set_u8(NVS_HANDLER, new_key, (uint8_t)value); break;
+			case 2: nvs_set_u16(NVS_HANDLER, new_key, (uint16_t)value); break;
+			case 4: nvs_set_u32(NVS_HANDLER, new_key, (uint32_t)value); break;
+			case 8: nvs_set_u64(NVS_HANDLER, new_key, (uint64_t)value); break;
+			case 17: nvs_set_i8(NVS_HANDLER, new_key, (int8_t)value); break;
+			case 18: nvs_set_i16(NVS_HANDLER, new_key, (int16_t)value); break;
+			case 20: nvs_set_i32(NVS_HANDLER, new_key, (int32_t)value); break;
+			case 24: nvs_set_i64(NVS_HANDLER, new_key, (int64_t)value); break;
+			case 33: nvs_set_str(NVS_HANDLER, new_key, val_str); break;
+			default: break;
+		}
 
-	int len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
-	return httpd_resp_send(req, output, len);
+		nvs_commit(NVS_HANDLER);
+		nvs_close(NVS_HANDLER);
+
+		len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
+		return httpd_resp_send(req, output, len);
+	}
+	else {
+		// if no old_key then get
+		uint8_t u8_val;uint16_t u16_val; uint32_t u32_val; uint64_t u64_val;
+		int8_t i8_val; int16_t i16_val; int32_t i32_val; int64_t i64_val;
+
+		//# Get - Return individual value
+		switch (type) {
+			case 1: {
+				nvs_get_u8(NVS_HANDLER, new_key, &u8_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%d,\"typ\":1}", u8_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 2: {
+				nvs_get_u16(NVS_HANDLER, new_key, &u16_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%d,\"typ\":2}", u16_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 4: {
+				nvs_get_u32(NVS_HANDLER, new_key, &u32_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%ld,\"typ\":4}", u32_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 8: {
+				nvs_get_u64(NVS_HANDLER, new_key, &u64_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%lld,\"typ\":8}", u64_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 17: {
+				nvs_get_i8(NVS_HANDLER, new_key, &i8_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%d,\"typ\":17}", i8_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 18: {
+				nvs_get_i16(NVS_HANDLER, new_key, &i16_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%d,\"typ\":18}", i16_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 20: {
+				nvs_get_i32(NVS_HANDLER, new_key, &i32_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%ld,\"typ\":20}", i32_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 24: {
+				nvs_get_i64(NVS_HANDLER, new_key, &i64_val);
+				len = snprintf(output, sizeof(output), "{\"val\":%lld,\"typ\":24}", i64_val);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			case 33: {
+				len = sizeof(val_str);
+				nvs_get_str(NVS_HANDLER, new_key, val_str, &len);
+				len = snprintf(output, sizeof(output), "{\"val\":\"%s\",\"typ\":33}", val_str);
+				ret = httpd_resp_send(req, output, len);
+				break;
+			}
+			default: break;
+		}
+
+		nvs_close(NVS_HANDLER);
+		return ret;
+	}
 }
 
 esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {

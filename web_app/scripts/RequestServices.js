@@ -185,15 +185,20 @@ async function service_createEntry(new_name, onComplete) {
 	}
 }
 
-async function service_updateNVS(namespace, key, value, type, onComplete) {
+async function service_requestNVS(
+	namespace, new_key, old_key, value, type, onComplete
+) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
+	// no old_key => Get
+	// has old_key => Set
 	const params = new URLSearchParams({
 		name: namespace,
-		key: key,
+		new_k: new_key,
+		old_k: old_key,
 		val: value,
-		typ: type
+		typ: type,
 	})
 
 	try {
@@ -204,9 +209,46 @@ async function service_updateNVS(namespace, key, value, type, onComplete) {
 		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
-			const result = await resp.json()
-			console.log('%cresult:', 'color: purple', result)
-			onComplete?.(result)
+			const txt = await resp.text()
+			console.log('%cresult txt:', 'color: purple', txt)
+			onComplete?.(JSON.parse(txt))
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
+}
+
+async function service_eraseNVS(
+	namespace, old_key, onComplete
+) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	// value == 0 && type == 0 && has old_key => Delete Key
+	// value == 0 && type == 0 && no old_key => Delete Namespace
+	const params = new URLSearchParams({
+		name: namespace,
+		new_k: '',
+		old_k: old_key,
+		val: 0,
+		typ: 0,
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/u_nvs?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: purple', resp.url)
+
+		if (resp.ok) {
+			const txt = await resp.text()
+			console.log('%cresult txt:', 'color: purple', txt)
+			onComplete?.(JSON.parse(txt))
 		} else {
 			const errorText = await resp.text()
 			console.error('Server error:', errorText)

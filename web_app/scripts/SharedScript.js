@@ -1,4 +1,6 @@
-
+function get_field1() {
+	return document.getElementById('field1-value')
+}
 
 function show_field_modal(title, field_1, buttons_div) {
 	document.getElementById('field-modal').style.display='block'
@@ -11,7 +13,7 @@ function show_field_modal(title, field_1, buttons_div) {
 			<div style="margin-bottom: 20px;">
 				<!-- <label><b>Folder Name:</b></label> -->
 				<input type="text" id="field1-value" value="${field_1}" class="w3-input w3-border" 
-						style="margin-top: 5px;" placeholder="Folder name" maxlength="16">
+						style="margin-top: 5px;" placeholder="Name" maxlength="16">
 				<div id="field1-err" style="color: #f44336; font-size: 12px; margin-top: 5px; display: none;">
 					Please enter a valid folder name
 				</div>
