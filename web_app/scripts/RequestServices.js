@@ -126,24 +126,28 @@ async function service_getFiles(entry, onComplete) {
 	}
 }
 
-async function service_updateEntry(old_name, new_name, onComplete) {
+async function service_updateEntry(new_path, old_path, is_file, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
+	// has new_path, no old_path => Create
+	// no new_path, has old_path => Delete
+	// has new_path, has old_path => Update
 	const params = new URLSearchParams({
-		old: old_name,
-		new: new_name
+		new: new_path,
+		old: old_path,
+		file: is_file
 	})
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/u_files?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/u_file?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
-			const result = await (is_text ? resp.text() : resp.json())
+			const result = await resp.text()
 			console.log('%cresult:', 'color: purple', result)
 			onComplete?.(result)
 		} else {
@@ -156,23 +160,24 @@ async function service_updateEntry(old_name, new_name, onComplete) {
 	}
 }
 
-async function service_createEntry(new_name, onComplete) {
+async function service_modifyFile(path, content, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
 	const params = new URLSearchParams({
-		new: new_name
+		path: path,
+		txt: content
 	})
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/c_files?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/m_file?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
-			const result = await (is_text ? resp.text() : resp.json())
+			const result = await resp.text()
 			console.log('%cresult:', 'color: purple', result)
 			onComplete?.(result)
 		} else {

@@ -441,8 +441,63 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 	}
 }
 
-esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char new_path[64] = {0};
+	char old_path[64] = {0};
+	char isFile_str[4] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "new", new_path, sizeof(new_path));
+		httpd_query_key_value(query, "old", old_path, sizeof(old_path));
+		httpd_query_key_value(query, "isFile_str", old_path, sizeof(isFile_str));
+	}
+	// replace '*' with '/'
+	for (char *p = new_path; *p; p++) if (*p == '*') *p = '/';
+	for (char *p = old_path; *p; p++) if (*p == '*') *p = '/';
+
+	esp_err_t ret;
+	int new_name_len = strlen(new_path);
+	int old_name_len = strlen(old_path);
+	int is_file = atoi(isFile_str);
+
+	// no old_name => Create
+	if (!old_name_len) {
+		printf("create: %s\n", new_path);
+
+		sd_ensure_dir(new_path);
+	}
+	// no new_name => Delete
+	else if (!new_name_len) {
+		printf("remove: %s\n", old_path);
+
+		if (is_file) {
+			sd_remove_file(old_path);
+		} else {
+			sd_remove_dir_recursive(old_path);
+		}
+	}
+	// otherwise => Rename
+	else if (new_name_len && old_name_len) {
+		printf("rename: %s -> %s\n", old_path, new_path);
+
+		ret = sd_rename(old_path, new_path);
+		if (ret == ESP_OK) {
+			return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+		}
+	}
+
+	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
 
 	char query[128];
@@ -472,7 +527,7 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 		return ESP_FAIL;
 	}
 
-	// replace ',' with '/'
+	// replace '*' with '/'
 	for (char *p = entry_str; *p; p++) {
 		if (*p == '*') *p = '/';
 	}
@@ -565,7 +620,7 @@ void app_main(void) {
 			//# Delete log folder
 			int mode = gpio_get_level(MODE_PIN);
 			if (mode == 0) {
-				sd_remove_dir(SD_POINT"/log2");
+				sd_remove_dir_recursive(SD_POINT"/log2");
 			}
 
 			if (!sd_ensure_dir(SD_POINT"/log")) {

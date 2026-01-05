@@ -163,8 +163,29 @@ void storage_sd_format_card() {
 	}
 }
 
+esp_err_t sd_rename(const char *old_path, const char *new_path) {
+	esp_err_t ret = rename(old_path, new_path);
+	
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG_SD, "Err: sd_rename (%s)", esp_err_to_name(ret));
+		return ret;
+	}
+	return ESP_OK;
+}
+
+esp_err_t sd_remove_file(const char *path) {
+	esp_err_t ret = remove(path);
+	
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG_SD, "Err: sd_remove_file (%s)", esp_err_to_name(ret));
+		return ret;
+	}
+	return ESP_OK;
+}
+
+
 //# Unmount card
-void mod_sd_deinit(spi_host_device_t slot) {
+void sd_deinit(spi_host_device_t slot) {
 	// unmount partition and disable SPI peripheral
 	esp_vfs_fat_sdcard_unmount(SD_POINT, card);
 	ESP_LOGI(TAG_SD, "Card unmounted");
@@ -368,7 +389,7 @@ void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...) {
 #include <unistd.h>         // For rmdir()
 
 // remove directory recursively
-int sd_remove_dir(const char* path) {
+int sd_remove_dir_recursive(const char* path) {
 	DIR* dir = opendir(path);
 	if (!dir) {
 		ESP_LOGE(TAG_SD, "Err open directory: %s", path);
@@ -396,7 +417,7 @@ int sd_remove_dir(const char* path) {
 		
 		if (S_ISDIR(statbuf.st_mode)) {
 			// Recursively remove subdirectory
-			if (!sd_remove_dir(full_path)) {
+			if (!sd_remove_dir_recursive(full_path)) {
 				success = 0;
 			}
 		} else {

@@ -214,6 +214,7 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -301,6 +302,14 @@ static httpd_handle_t start_webserver(void) {
 			.user_ctx = NULL,
 		};
 		httpd_register_uri_handler(server, &get_files_uri);
+
+		httpd_uri_t update_file_uri = {
+			.uri	  = "/u_file",
+			.method   = HTTP_GET,
+			.handler  = HTTP_UPDATE_FILE_HANDLER,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &update_file_uri);
 
 		httpd_uri_t update_nvs_uri = {
 			.uri	  = "/u_nvs",

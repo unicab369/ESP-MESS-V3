@@ -1,6 +1,5 @@
-var entries = []
+var PATH_ENTRIES = []
 var folders_files = []
-var selected_item = ''
 
 const nvs_type_map = {
 	1: 'u8', 2: 'u16', 4: 'u32', 8: 'u64',
@@ -9,8 +8,8 @@ const nvs_type_map = {
 }
 
 function backEntry() {
-	if (entries.length < 2) return
-	entries.pop()
+	if (PATH_ENTRIES.length < 2) return
+	PATH_ENTRIES.pop()
 	reloadEntry('')
 }
 
@@ -116,17 +115,17 @@ function onUpdateNVS(old_namespace, old_key) {
 	})
 }
 
-function reloadEntry(sub_entry = '*sdcard*log', is_new = true) {
+function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 	if (sub_entry.length > 0)  {
-		if (is_new) {
-			entries = [sub_entry]
+		if (restart) {
+			PATH_ENTRIES = [sub_entry]
 		} else {
-			entries.push(sub_entry)
+			PATH_ENTRIES.push(sub_entry)
 		}
 	}
 
-	console.log("entries:", entries)
-	sub_entry = entries.join('*')
+	console.log("entries:", PATH_ENTRIES)
+	sub_entry = PATH_ENTRIES.join('*')
 	console.log("sub_entry:", sub_entry)
 
 	service_getFiles(sub_entry, (result) => {
@@ -145,8 +144,8 @@ function reloadEntry(sub_entry = '*sdcard*log', is_new = true) {
 				</div>`
 		}
 		else {
-			// show error if there are more than 1 entries
-			if (entries.length < 2) html = ``
+			// show error if there are more than 1 PATH_ENTRIES
+			if (PATH_ENTRIES.length < 2) html = ``
 			
 			// Sort folders first
 			folders_files = result.sort((a, b) => {
@@ -190,59 +189,105 @@ function reloadEntry(sub_entry = '*sdcard*log', is_new = true) {
 
 
 function onCreateEntry(is_file) {
-	const buttons_div = /*html*/
-		`<button onclick="onUpdateEntry(1)" class="w3-button w3-blue w3-round" style="flex: 1;">
-			Create
-		</button>
-		
-		<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
-			Cancel
-		</button>`
-	show_field_modal(is_file ? 'Create File' : 'Create Folder', '', buttons_div)
+	if (is_file) {
+		show_textArea_modal('Create File', '', '', `
+			<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+				Create
+			</button>
+			
+			<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+				Cancel
+			</button>`
+		)
+	}
+	else {
+		show_field_modal('Create Folder', '', `
+			<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+				Create
+			</button>
+			
+			<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+				Cancel
+			</button>`
+		)	
+	}
 }
 
 function onEditEntry(index) {
-	selected_item = folders_files[index]
-	const title_str = selected_item.includes('.') ? 'Edit File' : 'Edit Folder'
+	const old_name = folders_files[index]
+	const title_str = old_name.includes('.') ? 'Edit File' : 'Edit Folder'
 	const buttons_div = /*html*/
-		`<button onclick="onUpdateEntry(0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+		`<button onclick="handleUpdateEntry('${old_name}', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
 			Update
 		</button>
 		
-		<button onclick="onUpdateEntry(1)" class="w3-button w3-red w3-round" style="flex: 1;">
+		<button onclick="handleUpdateEntry('${old_name}', 1)" class="w3-button w3-red w3-round" style="flex: 1;">
 			Delete
 		</button>
 		
 		<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 			Cancel
 		</button>`
-	show_field_modal(title_str, selected_item, buttons_div)
+	show_field_modal(title_str, old_name, buttons_div)
 }
 
-function onUpdateEntry(is_delete = 0) {
-	if (!selected_item) return
-	const is_file = selected_item.includes('.')
-	const new_name = document.getElementById('field1-value').value
-	const old_splits = selected_item.split('.')
+function handleModifyFile() {
+	const new_name = document.getElementById('field1-value').value.trim()
+}
+
+function handleUpdateEntry(old_name, is_delete = false) {
+	console.log('old_name:', old_name)
+	console.log('entries:', PATH_ENTRIES)
+
+	const is_file = old_name.includes('.')
+	const new_name = document.getElementById('field1-value').value.trim()
+	const old_splits = old_name.split('.')
 	const new_splits = new_name.split('.')
 
-	if (is_file && new_splits.length !== 2 && new_splits[1] != old_splits[1] ||
-		!is_file && new_splits.length !== 1
+	if (
+		is_file && new_splits.length !== 2 && new_splits[1] != old_splits[1] ||		// check file format
+		!is_file && new_splits.length !== 1	||										// check folder format
+		new_name.length < 1
 	) {
-		alert('Invalid: new name format mismatch')
+		alert('Invalid: name or format mismatch')
 		return
 	}
 
-	if (is_delete && confirm(`Are you sure you want to delete this ${is_file ? 'File' : 'Folder'}?`)) {
-		service_updateEntry(selected_item, '', (result) => {
+	const firstEntry = PATH_ENTRIES.find(() => true);
+	const newPath = PATH_ENTRIES.join('*') + '*' + new_name
+	const oldPath = PATH_ENTRIES.join('*') + '*' + old_name
+	console.log("update: %s %s", newPath, oldPath)
+
+	if (is_delete) {
+		if (confirm(`Are you sure you want to delete ${old_name}?`)) {
+			// Delete
+			service_updateEntry('', oldPath, is_file, (result) => {
+				reloadEntry(firstEntry)
+				close_field_modal()
+				return
+			})
+		}
+		return
+	}
+
+	if (old_name.length < 1) {
+		// Create
+		service_updateEntry(newPath, '', is_file, (result) => {
+			reloadEntry(firstEntry)
 			close_field_modal()
 		})
+		return
+	}
 
+	// No change
+	if (old_name === new_name) {
+		close_field_modal()
 		return
 	}
 
 	// Update
-	service_updateEntry(selected_item, new_name, (result) => {
+	service_updateEntry(newPath, oldPath, is_file, (result) => {
+		reloadEntry(firstEntry)
 		close_field_modal()
 	})
 }
