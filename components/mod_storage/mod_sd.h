@@ -17,7 +17,6 @@
 
 
 #define MAX_CHAR_SIZE	255
-static const char *TAG_SD = "[SD]";
 
 uint32_t hex_to_uint32_unrolled(const char *hex_str) {
     uint32_t result = 0;

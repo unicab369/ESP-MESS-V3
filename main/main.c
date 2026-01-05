@@ -39,6 +39,26 @@ void toggle_led() {
 	s_led_state = !s_led_state;	
 }
 
+void reload_logs() {
+	esp_err_t ret = mod_nvs_open("s_log");
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG, "Err reload_logs: %s", esp_err_to_name(ret));
+		return;
+	}
+
+	uint8_t log_sd = 0, log_http = 0, log_app = 0;
+	nvs_get_u8(NVS_HANDLER, "SD", &log_sd);
+	nvs_get_u8(NVS_HANDLER, "HTTP", &log_http);
+	nvs_get_u8(NVS_HANDLER, "APP", &log_app);
+	nvs_close(NVS_HANDLER);
+	ESP_LOGW(TAG, "Update Logs SD:%d, HTTP:%d, APP:%d", log_sd, log_http, log_app);
+
+	//# Set Logs level
+	esp_log_level_set(TAG_SD, log_sd);
+	esp_log_level_set(TAG_HTTP, log_http);
+	esp_log_level_set(TAG, log_app);
+}
+
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	// Set response headers
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
@@ -303,7 +323,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 			return ESP_OK;
 		}
 	}
-	
+
 	// Delete if type == 0 and value == 0
 	if (type == 0 && value == 0) {
 		//# Delete - return list
@@ -339,9 +359,12 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 			case 33: nvs_set_str(NVS_HANDLER, new_key, val_str); break;
 			default: break;
 		}
-
 		nvs_commit(NVS_HANDLER);
 		nvs_close(NVS_HANDLER);
+
+		if (memcmp(name_str, "s_log", 5) == 0) {
+			reload_logs();
+		}
 
 		len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
 		return httpd_resp_send(req, output, len);
@@ -408,7 +431,9 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 				ret = httpd_resp_send(req, output, len);
 				break;
 			}
-			default: break;
+			default:
+				ret = httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN); 
+				break;
 		}
 
 		nvs_close(NVS_HANDLER);
@@ -474,35 +499,36 @@ void app_main(void) {
 	
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
 	mod_nvs_setup();
+	reload_logs();
 
-	ret = mod_nvs_open("test2");
-	if (ret == ESP_OK) {
-		uint8_t val0;
-		uint16_t val1;
-		uint32_t val2;
-		char str0[32];
+	// ret = mod_nvs_open("test2");
+	// if (ret == ESP_OK) {
+	// 	uint8_t val0;
+	// 	uint16_t val1;
+	// 	uint32_t val2;
+	// 	char str0[32];
 
-		nvs_get_u8(NVS_HANDLER, "val0", &val0);
-		nvs_get_u16(NVS_HANDLER, "val1", &val1);
-		nvs_get_u32(NVS_HANDLER, "val2", &val2);
-		size_t len = sizeof(str0);
-		nvs_get_str(NVS_HANDLER, "val3", str0, &len);
-		printf("old val0=%d, val1=%d, val2=%ld, val3=%s\n", val0, val1, val2, str0);
+	// 	nvs_get_u8(NVS_HANDLER, "val0", &val0);
+	// 	nvs_get_u16(NVS_HANDLER, "val1", &val1);
+	// 	nvs_get_u32(NVS_HANDLER, "val2", &val2);
+	// 	size_t len = sizeof(str0);
+	// 	nvs_get_str(NVS_HANDLER, "val3", str0, &len);
+	// 	printf("old val0=%d, val1=%d, val2=%ld, val3=%s\n", val0, val1, val2, str0);
 
-		///////////////////////
+	// 	///////////////////////
 
-		char output[32];
-		snprintf(output, sizeof(output), "hello %d", val0 + 10);
-		nvs_set_u8(NVS_HANDLER, "val0", val0 + 10);
-		nvs_set_u16(NVS_HANDLER, "val1", val1 + 11);
-		nvs_set_u32(NVS_HANDLER, "val2", val2 + 12);
-		nvs_set_str(NVS_HANDLER, "val3", output);
-		nvs_commit(NVS_HANDLER);
-		nvs_close(NVS_HANDLER);
+	// 	char output[32];
+	// 	snprintf(output, sizeof(output), "hello %d", val0 + 10);
+	// 	nvs_set_u8(NVS_HANDLER, "val0", val0 + 10);
+	// 	nvs_set_u16(NVS_HANDLER, "val1", val1 + 11);
+	// 	nvs_set_u32(NVS_HANDLER, "val2", val2 + 12);
+	// 	nvs_set_str(NVS_HANDLER, "val3", output);
+	// 	nvs_commit(NVS_HANDLER);
+	// 	nvs_close(NVS_HANDLER);
 		
-		mod_nvs_listKeys("test1");
-		mod_nvs_listKeys(NULL);
-	}
+	// 	mod_nvs_listKeys("test1");
+	// 	mod_nvs_listKeys(NULL);
+	// }
 
 	littleFS_init();
 
@@ -528,11 +554,6 @@ void app_main(void) {
 	};
 
 	ret = mod_spi_init(&spi_conf0, 20E6);
-
-	//# Set Logs level
-	// esp_log_level_set(TAG_LOG_SD, ESP_LOG_NONE);
-	// esp_log_level_set(TAG_HTTP, ESP_LOG_NONE);
-	esp_log_level_set(TAG, ESP_LOG_NONE);
 
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
