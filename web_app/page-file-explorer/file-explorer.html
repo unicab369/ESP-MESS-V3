@@ -47,36 +47,72 @@
 			<div style="margin-bottom: 15px; display: flex; gap: 20px; font-size: 18px; color: blue;">
 				<a href="#" onclick="loadEntry('*sdcard*log', true)">/log</a>
 				<a href="#" onclick="loadEntry('*littlefs', true)">/littleFS</a>
-				<a href="#" onclick="loadEntry()">/nvs</a>
+				<a href="#" onclick="loadNVS()">/nvs</a>
 			</div>
 
 			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
-									border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
-				<div style="text-align: center; padding: 20px; color: #666;">
-					No File found
-				</div>
+							border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 			</div>
 			
 			<div id="item-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
-
-			<!-- <div style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end;">
-				<button class="btn" onclick="startScan()">🔄 Refresh</button>
-			</div> -->
+			<div id="button-container" style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end;"></div>
+			<div id="field-modal" class="w3-modal"></div>
 		</div>
 	</div>
 
 	<!-- scripts -->
+	<script src="../scripts/SharedScript.js"></script>
 	<script src="../scripts/RequestScheduler.js"></script>
 	<script src="../scripts/RequestServices.js"></script>
 	<!-- <script src="page-script.js"></script> -->
 
 	<script>
 		var entries = []
+		var folders_files = []
+		var selected_item = ''
+
+		const nvs_type_map = {
+			1: 'u8', 2: 'u16', 4: 'u32', 8: 'u64',
+			17: 'i8', 18: 'i16', 20: 'i32', 24: 'i64',
+			33: 'str', 66: 'blob', 255: 'any'
+		}
 
 		function backEntry() {
 			if (entries.length < 2) return
 			entries.pop()
 			loadEntry('')
+		}
+
+		function loadNVS(sub_entry = 'nvs') {
+			service_getFiles(sub_entry, (result) => {
+				let html = ''
+				const sorted = result.sort((a, b) => {
+					return a[0].toUpperCase().localeCompare(b[0].toUpperCase())
+				})
+
+				if (sorted.length === 0) {
+					html += '<div style="text-align: center; padding: 20px; color: #666;">No Files found</div>';
+				} else {
+					// For each cell
+					sorted.forEach((item, index) => {
+						html += /*html*/
+							`
+								<div onclick="onEditNSV('${item}')" 
+									style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+									<div style="flex: 1;">${item[0]}/${item[1]} (${nvs_type_map[item[2]]})</div>
+
+									<div style="background: gray; color: white; padding: 5px 12px; border-radius: 10px;">
+										✎ Edit
+									</div>
+								</div>
+							`
+					})
+				}
+				document.getElementById('list-container').innerHTML = html
+
+				document.getElementById('button-container').innerHTML = /*html*/
+					`<button class="btn" onclick="onEditNSV('')">📜 Add Key Pair</button>`
+			})
 		}
 
 		function loadEntry(sub_entry = '*sdcard*log', is_new = true) {
@@ -89,34 +125,30 @@
 			}
 
 			console.log("entries:", entries)
-
 			sub_entry = entries.join('*')
 			console.log("sub_entry:", sub_entry)
 
 			service_getFiles(sub_entry, (result) => {
 				let html = /*html*/
-					`
-						<div onclick="backEntry()" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-							<div>⬅️ Back</div>
-						</div>
-					`
+					`<div onclick="backEntry()" style="display: flex; align-items: center; padding: 8px; 
+														border-bottom: 1px solid #eee; gap: 10px;">
+						<div>⬅️ Back</div>
+					</div>`
 
 				const is_text = sub_entry.toUpperCase().includes('.TXT')
 
 				if (is_text) {
 					html += /*html*/
-						`
-							<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+						`<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 								<div style="white-space: pre-wrap;">${result}</div>
-							</div>
-						`
+						</div>`
 				}
 				else {
 					// show error if there are more than 1 entries
 					if (entries.length < 2) html = ``
 					
 					// Sort folders first
-					const sorted = result.sort((a, b) => {
+					folders_files = result.sort((a, b) => {
 						const aIsFolder = !a.includes('.')
 						const bIsFolder = !b.includes('.')
 						
@@ -129,22 +161,200 @@
 					})
 
 					// Update UI
-					if (sorted.length === 0) {
+					if (folders_files.length === 0) {
 						html += '<div style="text-align: center; padding: 20px; color: #666;">No Files found</div>';
 					} else {
-						sorted.forEach((item, index) => {
-							const prefix = item.includes('.') ? '📄' : '📁';
+						// For each cell
+						folders_files.forEach((item, index) => {
 							html += /*html*/
-								`
-									<div onclick="loadEntry('${item}', false)" style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-										<div>${prefix} ${item}</div>
+								`<div onclick="loadEntry('${item}', false)" 
+										style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+									<div style="flex: 1;">${item.includes('.') ? '📄' : '📁'} ${item}</div>
+
+									<div onclick="event.stopPropagation(); onEditEntry('${index}')" 
+										style="background: gray; color: white; padding: 5px 12px; border-radius: 10px;">
+										✎ Edit
 									</div>
-								`
+								</div>`
 						})
 					}
 				}
 				
 				document.getElementById('list-container').innerHTML = html
+				document.getElementById('button-container').innerHTML = /*html*/
+					`<button class="btn" onclick="onCreateEntry(0)">📂 Add Folder</button>
+					<button class="btn" onclick="onCreateEntry(1)">📄 Add File</button>`
+			})
+		}
+
+		function onEditNSV(target) {
+			console.log("onEditNSV:", target)
+			const is_create = target.length < 1
+			const splits = target?.split(',')
+
+			let type_options = '<option value="">-- Please select --</option>'
+
+			Object.entries(nvs_type_map).forEach(([key, value]) => {
+				if (key == 255) return
+				const selected = (splits[2] == key) ? 'selected' : ''
+				type_options += `<option value="${key}" ${selected}>${value}</option>`
+			})
+
+			document.getElementById('field-modal').innerHTML = /*html*/
+				`<div class="w3-modal-content w3-container" style="max-width: 400px;">
+					<h2>${is_create ? 'Create New Key Pair' : `Edit Key Pair`}</h2>
+
+					<!-- Namespace input -->
+					<div style="margin-bottom: 20px;">
+						<label><b>Namespace:</b></label>
+						<input type="text" id="field1-value" value="${splits[0] ?? ''}" class="w3-input w3-border" 
+								style="margin-top: 5px;" maxlength="16">
+					</div>
+
+					<!-- Type select -->
+					<div style="margin-bottom: 20px;">
+						<label><b>Type:</b></label>
+						<select id="select-value" class="w3-select w3-border" style="margin-top: 5px;">
+							${type_options}
+						</select>
+					</div>
+
+					<!-- Key input -->
+					<div style="margin-bottom: 20px;">
+						<label><b>Key:</b></label>
+						<input type="text" id="field2-value" value="${splits[1] ?? ''}" class="w3-input w3-border" 
+								style="margin-top: 5px;" maxlength="16">
+					</div>
+
+					<!-- Value input -->
+					<div style="margin-bottom: 20px;">
+						<label><b>Value:</b></label>
+						<input type="text" id="field3-value" class="w3-input w3-border" style="margin-top: 5px;" maxlength="16">
+					</div>
+
+					<!-- Action buttons -->
+					<div style="display: flex; gap: 10px; margin-top: 25px; margin-bottom: 15px;">
+						${
+							is_create ?
+								`<button onclick="onCreateNSV()" class="w3-button w3-blue w3-round" style="flex: 1;">
+									Create
+								</button>`
+								:
+								`<button onclick="onUpdateNSV('${target}', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+									Update
+								</button>
+								<button onclick="onUpdateNSV('${target}', 1)" class="w3-button w3-red w3-round" style="flex: 1;">
+									Delete
+								</button>
+								`
+						}
+						
+						<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+							Cancel
+						</button>
+					</div>
+				</div>`
+
+			if (!is_create) {
+				document.getElementById('field1-value').readOnly = true
+				document.getElementById('field1-value').classList.add('w3-light-gray')
+				document.getElementById('select-value').disabled = true
+				document.getElementById('select-value').classList.add('w3-light-gray')
+			}
+
+			document.getElementById('field-modal').style.display = 'block'
+		}
+
+		function onCreateNSV() {
+			const namespace = document.getElementById('field1-value').value
+			const key = document.getElementById('field2-value').value
+			const value = document.getElementById('field3-value').value
+			const type = document.getElementById('select-value').value
+			console.log("onCreateNSV:", namespace, key, value, type)
+
+			service_updateNSV(namespace, key, value, type, (result) => {
+				close_field_modal()
+			})
+		}
+
+		function onUpdateNSV(target, is_delete) {
+			console.log("onUpdateNSV:", target)
+			
+			if (is_delete) {
+				if (confirm('Are you sure you want to delete this Key Pair?')) {
+					service_updateNSV(namespace, key, 0, 0, (result) => {
+						close_field_modal()
+					})
+				}
+				return
+			}
+
+			const namespace = document.getElementById('field1-value').value
+			const key = document.getElementById('field2-value').value
+			const value = document.getElementById('field3-value').value
+			const type = document.getElementById('select-value').value
+			console.log("onUpdateNSV:", namespace, key, value, type)
+
+			service_updateNSV(namespace, key, value, type, (result) => {
+				close_field_modal()
+			})
+		}
+
+		function onCreateEntry(is_file) {
+			const buttons_div = /*html*/
+				`<button onclick="onUpdateEntry(1)" class="w3-button w3-blue w3-round" style="flex: 1;">
+					Create
+				</button>
+				
+				<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+					Cancel
+				</button>`
+			show_field_modal(is_file ? 'Create File' : 'Create Folder', '', buttons_div)
+		}
+
+		function onEditEntry(index) {
+			selected_item = folders_files[index]
+			const title_str = selected_item.includes('.') ? 'Edit File' : 'Edit Folder'
+			const buttons_div = /*html*/
+				`<button onclick="onUpdateEntry(0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+					Update
+				</button>
+				
+				<button onclick="onUpdateEntry(1)" class="w3-button w3-red w3-round" style="flex: 1;">
+					Delete
+				</button>
+				
+				<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+					Cancel
+				</button>`
+			show_field_modal(title_str, selected_item, buttons_div)
+		}
+
+		function onUpdateEntry(is_delete = 0) {
+			if (!selected_item) return
+			const is_file = selected_item.includes('.')
+			const new_name = document.getElementById('field1-value').value
+			const old_splits = selected_item.split('.')
+			const new_splits = new_name.split('.')
+
+			if (is_file && new_splits.length !== 2 && new_splits[1] != old_splits[1] ||
+				!is_file && new_splits.length !== 1
+			) {
+				alert('Invalid: new name format mismatch')
+				return
+			}
+
+			if (is_delete && confirm(`Are you sure you want to delete this ${is_file ? 'File' : 'Folder'}?`)) {
+				service_updateEntry(selected_item, '', (result) => {
+					close_field_modal()
+				})
+
+				return
+			}
+
+			// Update
+			service_updateEntry(selected_item, new_name, (result) => {
+				close_field_modal()
 			})
 		}
 
@@ -152,11 +362,7 @@
 		window.addEventListener('DOMContentLoaded', async function() {
 			loadEntry()
 		});
-		
-		function closeModal() {
-			document.body.removeChild(document.getElementById('overlay-container'));
-			window.confirm3 = null;
-		}
+
 	</script>
 </body>
 </html>

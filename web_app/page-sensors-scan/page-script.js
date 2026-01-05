@@ -146,6 +146,6 @@ function showLog(index) {
 		const date = new Date(timestamp*1000)
 		console.log("last Time", date.toLocaleString())
 
-		// document.getElementById('id01').style.display='block'
+		document.getElementById('id01').style.display='block'
 	})
 }

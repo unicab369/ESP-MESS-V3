@@ -16,6 +16,7 @@
 #include "WIFI_CRED.h"
 
 #include "mod_littlefs_log.h"
+#include "mod_nvs.h"
 
 
 #define LED_PIN 22
@@ -272,6 +273,7 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 	char entry_str[64] = {0};
 	char txt_str[4] = {0};
 	char bin_str[4] = {0};
+	char output[1024] = {0};
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -282,6 +284,18 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 		httpd_query_key_value(query, "bin", bin_str, sizeof(bin_str));
 	}
 
+	if (memcmp(entry_str, "nvs", 3) == 0) {
+		int len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
+		return httpd_resp_send(req, output, len);
+	}
+	else if (memcmp(entry_str, "*sd", 3) == 0 || memcmp(entry_str, "*litt", 5) == 0) {
+		// continue
+	}
+	else {
+		httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized Access");
+		return ESP_FAIL;
+	}
+
 	// replace ',' with '/'
 	for (char *p = entry_str; *p; p++) {
 		if (*p == '*') *p = '/';
@@ -289,7 +303,6 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 
 	int is_txt = atoi(txt_str);
 	int is_bin = atoi(bin_str);
-	char output[1024] = {0};
 
 	int len = 0;
 	if (is_txt || is_bin) {
@@ -304,19 +317,43 @@ esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 }
 
 void app_main(void) {
-	littleFS_init();
-	littleFS_test();
-
+	esp_err_t ret;
 	SD_MUTEX = xSemaphoreCreateMutex();
-
-	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
-	esp_err_t ret = nvs_flash_init();
-	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-		ESP_ERROR_CHECK(nvs_flash_erase());
-		ret = nvs_flash_init();
-	}
-	ESP_ERROR_CHECK(ret);
 	ESP_LOGI(TAG, "APP START");
+	
+	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
+	mod_nvs_setup();
+
+	ret = mod_nvs_open("test2");
+	if (ret == ESP_OK) {
+		uint8_t val0;
+		uint16_t val1;
+		uint32_t val2;
+		char str0[32];
+
+		nvs_get_u8(NVS_HANDLER, "val0", &val0);
+		nvs_get_u16(NVS_HANDLER, "val1", &val1);
+		nvs_get_u32(NVS_HANDLER, "val2", &val2);
+		size_t len = sizeof(str0);
+		nvs_get_str(NVS_HANDLER, "val3", str0, &len);
+		printf("old val0=%d, val1=%d, val2=%ld, val3=%s\n", val0, val1, val2, str0);
+
+		///////////////////////
+
+		char output[32];
+		snprintf(output, sizeof(output), "hello %d", val0 + 10);
+		nvs_set_u8(NVS_HANDLER, "val0", val0 + 10);
+		nvs_set_u16(NVS_HANDLER, "val1", val1 + 11);
+		nvs_set_u32(NVS_HANDLER, "val2", val2 + 12);
+		nvs_set_str(NVS_HANDLER, "val3", output);
+		nvs_commit(NVS_HANDLER);
+		nvs_close(NVS_HANDLER);
+		
+		mod_nvs_listKeys("test1");
+		mod_nvs_listKeys(NULL);
+	}
+
+	littleFS_init();
 
 	//# Setup Blinking
 	gpio_reset_pin(LED_PIN);
@@ -362,7 +399,6 @@ void app_main(void) {
 			if (!sd_ensure_dir(SD_POINT"/log")) {
 				ESP_LOGE(TAG_SD, "Err create /log");
 			}
-
 		}
 	}
 

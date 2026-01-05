@@ -417,15 +417,15 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 
 static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	if (buffer == NULL || buffer_size < 3) return 0;
-	char *ptr = buffer;
 	int count = 0;
+	char *ptr = buffer;
 	*ptr++ = '[';
 	
 	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
         device_cache_t *target = &DEVICE_CACHE[i];
         if (target->uuid == 0) break;
-        if (count > 0) *ptr++ = ',';
 		
+        if (count > 0) *ptr++ = ',';
 		int written = snprintf(ptr, buffer_size - (ptr - buffer),
 							"[\"%08lX\",%ld]", target->uuid, target->timestamp);
 		if (written < 0 || written >= buffer_size - (ptr - buffer)) break; // Buffer full

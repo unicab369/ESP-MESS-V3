@@ -10,7 +10,7 @@ idf_component_register(
         spi_flash
         esp_wifi
         mod_spi
-        mod_sd
+        mod_storage
         mod_network
 )
 

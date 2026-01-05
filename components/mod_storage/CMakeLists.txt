@@ -5,4 +5,5 @@ idf_component_register(
 		fatfs
 		sd_card
 		esp_timer
+		nvs_flash
 )

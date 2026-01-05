@@ -13,7 +13,7 @@ async function service_saveConfig(chart_id, config, onComplete) {
 		dev: chart_id,
 		cfg: config					
 	});
-	console.log('%cSave config: %s', 'color: red', params.toString());
+	console.log('%cSave config: %s', 'color: purple', params.toString());
 
 	try {
 		// Load config
@@ -52,7 +52,7 @@ async function service_startScan(onComplete) {
 
 			if (resp.ok) {
 				const result = await resp.json()
-				console.log('%cresult:', 'color: red', result)
+				console.log('%cresult:', 'color: purple', result)
 				onComplete?.(result)
 			} else {
 				const errorText = await resp.text()
@@ -80,7 +80,7 @@ async function service_getDeviceLog(chart_id, onComplete) {
 		const resp = await fetch(`http://${serverIp}/g_log?${params.toString()}`, {
 			method: 'GET'
 		})
-		console.log('%crequest: %s', 'color: red', resp.url)
+		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
 			const result = await resp.arrayBuffer()
@@ -94,7 +94,6 @@ async function service_getDeviceLog(chart_id, onComplete) {
 		console.error('Connection error:', error)
 	}
 }
-
 
 async function service_getFiles(entry, onComplete) {
 	const serverIp = get_serverIp()
@@ -111,11 +110,11 @@ async function service_getFiles(entry, onComplete) {
 		const resp = await fetch(`http://${serverIp}/g_files?${params.toString()}`, {
 			method: 'GET'
 		})
-		console.log('%crequest: %s', 'color: red', resp.url)
+		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
 			const result = await (is_text ? resp.text() : resp.json())
-			console.log('%cresult:', 'color: red', result)
+			console.log('%cresult:', 'color: purple', result)
 			onComplete?.(result)
 		} else {
 			const errorText = await resp.text()
@@ -124,5 +123,96 @@ async function service_getFiles(entry, onComplete) {
 	}
 	catch(error) {
 		console.error('Connection error:', error)	
+	}
+}
+
+async function service_updateEntry(old_name, new_name, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	const params = new URLSearchParams({
+		old: old_name,
+		new: new_name
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/u_files?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: purple', resp.url)
+
+		if (resp.ok) {
+			const result = await (is_text ? resp.text() : resp.json())
+			console.log('%cresult:', 'color: purple', result)
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
+}
+
+async function service_createEntry(new_name, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	const params = new URLSearchParams({
+		new: new_name
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/c_files?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: purple', resp.url)
+
+		if (resp.ok) {
+			const result = await (is_text ? resp.text() : resp.json())
+			console.log('%cresult:', 'color: purple', result)
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
+}
+
+async function service_updateNSV(namespace, key, value, type, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	const params = new URLSearchParams({
+		name: namespace,
+		key: key,
+		val: value,
+		typ: type
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/u_nsv?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: purple', resp.url)
+
+		if (resp.ok) {
+			const result = await (is_text ? resp.text() : resp.json())
+			console.log('%cresult:', 'color: purple', result)
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
 	}
 }
