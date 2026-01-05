@@ -265,6 +265,57 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	return send_http_file(req, path_str);
 }
 
+esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "application/json");
+
+	char query[128];
+	char name_str[11] = {0};
+	char key_str[11] = {0};
+	char val_str[17] = {0};
+	char type_str[4] = {0};
+	char output[1024] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "name", name_str, sizeof(name_str));
+		httpd_query_key_value(query, "key", key_str, sizeof(key_str));
+		httpd_query_key_value(query, "val", val_str, sizeof(val_str));
+		httpd_query_key_value(query, "typ", type_str, sizeof(type_str));
+	}
+
+	int type = atoi(type_str);
+	int value = atoi(val_str);
+
+	esp_err_t ret = mod_nvs_open(name_str);
+	if (ret != ESP_OK) {
+		httpd_resp_set_type(req, "text/plain");
+		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Err mod_nvs_open");
+		return ESP_OK;
+	}
+
+	switch (type) {
+		case 1: nvs_set_u8(NVS_HANDLER, key_str, (uint8_t)value); break;
+		case 2: nvs_set_u16(NVS_HANDLER, key_str, (uint16_t)value); break;
+		case 4: nvs_set_u32(NVS_HANDLER, key_str, (uint32_t)value); break;
+		case 8: nvs_set_u64(NVS_HANDLER, key_str, (uint64_t)value); break;
+		case 17: nvs_set_i8(NVS_HANDLER, key_str, value); break;
+		case 18: nvs_set_i16(NVS_HANDLER, key_str, value); break;
+		case 20: nvs_set_i32(NVS_HANDLER, key_str, value); break;
+		case 24: nvs_set_i64(NVS_HANDLER, key_str, value); break;
+		case 33:  nvs_set_str(NVS_HANDLER, key_str, val_str); break;
+		default: break;
+	}
+
+	nvs_commit(NVS_HANDLER);
+	nvs_close(NVS_HANDLER);
+
+	int len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
+	return httpd_resp_send(req, output, len);
+}
+
 esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "application/json");

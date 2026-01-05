@@ -97,7 +97,7 @@
 					sorted.forEach((item, index) => {
 						html += /*html*/
 							`
-								<div onclick="onEditNSV('${item}')" 
+								<div onclick="onEditNVS('${item}')" 
 									style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 									<div style="flex: 1;">${item[0]}/${item[1]} (${nvs_type_map[item[2]]})</div>
 
@@ -111,7 +111,7 @@
 				document.getElementById('list-container').innerHTML = html
 
 				document.getElementById('button-container').innerHTML = /*html*/
-					`<button class="btn" onclick="onEditNSV('')">📜 Add Key Pair</button>`
+					`<button class="btn" onclick="onEditNVS('')">📜 Add Key Pair</button>`
 			})
 		}
 
@@ -187,8 +187,8 @@
 			})
 		}
 
-		function onEditNSV(target) {
-			console.log("onEditNSV:", target)
+		function onEditNVS(target) {
+			console.log("onEditNVS:", target)
 			const is_create = target.length < 1
 			const splits = target?.split(',')
 
@@ -208,7 +208,7 @@
 					<div style="margin-bottom: 20px;">
 						<label><b>Namespace:</b></label>
 						<input type="text" id="field1-value" value="${splits[0] ?? ''}" class="w3-input w3-border" 
-								style="margin-top: 5px;" maxlength="16">
+								style="margin-top: 5px;" maxlength="10">
 					</div>
 
 					<!-- Type select -->
@@ -223,7 +223,7 @@
 					<div style="margin-bottom: 20px;">
 						<label><b>Key:</b></label>
 						<input type="text" id="field2-value" value="${splits[1] ?? ''}" class="w3-input w3-border" 
-								style="margin-top: 5px;" maxlength="16">
+								style="margin-top: 5px;" maxlength="10">
 					</div>
 
 					<!-- Value input -->
@@ -236,14 +236,14 @@
 					<div style="display: flex; gap: 10px; margin-top: 25px; margin-bottom: 15px;">
 						${
 							is_create ?
-								`<button onclick="onCreateNSV()" class="w3-button w3-blue w3-round" style="flex: 1;">
+								`<button onclick="onCreateNVS()" class="w3-button w3-blue w3-round" style="flex: 1;">
 									Create
 								</button>`
 								:
-								`<button onclick="onUpdateNSV('${target}', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+								`<button onclick="onUpdateNVS('${target}', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
 									Update
 								</button>
-								<button onclick="onUpdateNSV('${target}', 1)" class="w3-button w3-red w3-round" style="flex: 1;">
+								<button onclick="onUpdateNVS('${target}', 1)" class="w3-button w3-red w3-round" style="flex: 1;">
 									Delete
 								</button>
 								`
@@ -265,24 +265,24 @@
 			document.getElementById('field-modal').style.display = 'block'
 		}
 
-		function onCreateNSV() {
+		function onCreateNVS() {
 			const namespace = document.getElementById('field1-value').value
 			const key = document.getElementById('field2-value').value
 			const value = document.getElementById('field3-value').value
 			const type = document.getElementById('select-value').value
-			console.log("onCreateNSV:", namespace, key, value, type)
+			console.log("onCreateNVS:", namespace, key, value, type)
 
-			service_updateNSV(namespace, key, value, type, (result) => {
+			service_updateNVS(namespace, key, value, type, (result) => {
 				close_field_modal()
 			})
 		}
 
-		function onUpdateNSV(target, is_delete) {
-			console.log("onUpdateNSV:", target)
+		function onUpdateNVS(target, is_delete) {
+			console.log("onUpdateNVS:", target)
 			
 			if (is_delete) {
 				if (confirm('Are you sure you want to delete this Key Pair?')) {
-					service_updateNSV(namespace, key, 0, 0, (result) => {
+					service_updateNVS(namespace, key, 0, 0, (result) => {
 						close_field_modal()
 					})
 				}
@@ -293,9 +293,14 @@
 			const key = document.getElementById('field2-value').value
 			const value = document.getElementById('field3-value').value
 			const type = document.getElementById('select-value').value
-			console.log("onUpdateNSV:", namespace, key, value, type)
+			console.log("onUpdateNVS:", namespace, key, value, type)
+			
+			if (namespace.trim().length == 0 || key.trim().length == 0 || value.trim().length == 0) {
+				alert('Please enter Required values')
+				return
+			}
 
-			service_updateNSV(namespace, key, value, type, (result) => {
+			service_updateNVS(namespace, key, value, type, (result) => {
 				close_field_modal()
 			})
 		}

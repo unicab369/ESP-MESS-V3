@@ -185,7 +185,7 @@ async function service_createEntry(new_name, onComplete) {
 	}
 }
 
-async function service_updateNSV(namespace, key, value, type, onComplete) {
+async function service_updateNVS(namespace, key, value, type, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
@@ -198,13 +198,13 @@ async function service_updateNSV(namespace, key, value, type, onComplete) {
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/u_nsv?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/u_nvs?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)
 
 		if (resp.ok) {
-			const result = await (is_text ? resp.text() : resp.json())
+			const result = await resp.json()
 			console.log('%cresult:', 'color: purple', result)
 			onComplete?.(result)
 		} else {
