@@ -1,3 +1,38 @@
+class PriorityRequestScheduler {
+	constructor(maxConcurrent = 3) {
+		this.queue = [];
+		this.active = 0;
+		this.maxConcurrent = maxConcurrent;
+	}
+
+	async add(requestFn, priority = 0) {
+		return new Promise((resolve, reject) => {
+			this.queue.push({ priority, requestFn, resolve, reject });
+			this.queue.sort((a, b) => b.priority - a.priority);
+			this.process();
+		});
+	}
+
+	async process() {
+		if (this.active >= this.maxConcurrent || this.queue.length === 0) return;
+
+		this.active++;
+		const { requestFn, resolve, reject } = this.queue.shift();
+
+		try {
+			const result = await requestFn();
+			resolve(result); // ✅ Response handled here
+		} catch (error) {
+			reject(error);   // ✅ Error handled here
+		} finally {
+			this.active--;
+			this.process();
+		}
+	}
+}
+
+const scheduler = new PriorityRequestScheduler(5);
+
 function get_serverIp() {
 	const serverIp = document.getElementById('serverIp').value.trim()
 	if (serverIp.length > 0) return serverIp
@@ -107,7 +142,7 @@ async function service_getFiles(entry, onComplete) {
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/g_files?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/g_entry?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)
@@ -141,7 +176,7 @@ async function service_updateEntry(new_path, old_path, is_file, onComplete) {
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/u_file?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/u_entry?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)

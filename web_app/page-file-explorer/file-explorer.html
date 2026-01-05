@@ -45,7 +45,7 @@
 			<div class="chart-title">📋 Scan Results</div>
 			
 			<div style="margin-bottom: 15px; display: flex; gap: 20px; font-size: 18px; color: blue;">
-				<a href="#" onclick="reloadEntry('*sdcard*log', true)">/log</a>
+				<a href="#" onclick="reloadEntry('*sdcard*log', true)">/sdcard/log</a>
 				<a href="#" onclick="reloadEntry('*littlefs', true)">/littleFS</a>
 				<a href="#" onclick="reloadNVS()">/nvs</a>
 			</div>
@@ -62,7 +62,6 @@
 
 	<!-- scripts -->
 	<script src="../scripts/SharedScript.js"></script>
-	<script src="../scripts/RequestScheduler.js"></script>
 	<script src="../scripts/RequestServices.js"></script>
 	<script src="page-script.js"></script>
 

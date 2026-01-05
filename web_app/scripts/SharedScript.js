@@ -46,9 +46,7 @@ function show_textArea_modal(title, field1, area1, buttons_div) {
 			<div style="margin-bottom: 20px;">
 				<label style="display: block; margin-bottom: 5px; font-weight: 500;">String:</label>
 				<textarea id="area1-value" class="w3-input w3-border" placeholder="Content"
-						style="min-height: 200px; padding: 10px;" maxlength="500">
-					${area1}
-				</textarea>
+						style="min-height: 200px; padding: 10px;" maxlength="500">${area1.trim()}</textarea>
 				<div style="text-align: right; font-size: 12px; color: #666; margin-top: 5px;">
 					0/500 characters
 				</div>

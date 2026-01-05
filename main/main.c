@@ -441,7 +441,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 	}
 }
 
-esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 
@@ -469,13 +469,12 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 
 	// no old_name => Create
 	if (!old_name_len) {
-		printf("create: %s\n", new_path);
-
+		ESP_LOGW(TAG, "create: %s", new_path);
 		sd_ensure_dir(new_path);
 	}
 	// no new_name => Delete
 	else if (!new_name_len) {
-		printf("remove: %s\n", old_path);
+		ESP_LOGW(TAG, "remove: %s", old_path);
 
 		if (is_file) {
 			sd_remove_file(old_path);
@@ -485,8 +484,8 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	}
 	// otherwise => Rename
 	else if (new_name_len && old_name_len) {
-		printf("rename: %s -> %s\n", old_path, new_path);
-
+		ESP_LOGW(TAG, "rename: %s -> %s", old_path, new_path);
+		
 		ret = sd_rename(old_path, new_path);
 		if (ret == ESP_OK) {
 			return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
@@ -496,7 +495,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
 

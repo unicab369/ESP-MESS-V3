@@ -212,9 +212,10 @@ esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req);
-esp_err_t HTTP_GET_FILES_HANDLER(httpd_req_t *req);
+
+esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req);
-esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -295,21 +296,21 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &get_log_uri);
 
-		httpd_uri_t get_files_uri = {
-			.uri	  = "/g_files",
+		httpd_uri_t get_entries_uri = {
+			.uri	  = "/g_entry",
 			.method   = HTTP_GET,
-			.handler  = HTTP_GET_FILES_HANDLER,
+			.handler  = HTTP_GET_ENTRIES_HANDLER,
 			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &get_files_uri);
+		httpd_register_uri_handler(server, &get_entries_uri);
 
-		httpd_uri_t update_file_uri = {
-			.uri	  = "/u_file",
+		httpd_uri_t update_entry_uri = {
+			.uri	  = "/u_entry",
 			.method   = HTTP_GET,
-			.handler  = HTTP_UPDATE_FILE_HANDLER,
+			.handler  = HTTP_UPDATE_ENTRY_HANDLER,
 			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &update_file_uri);
+		httpd_register_uri_handler(server, &update_entry_uri);
 
 		httpd_uri_t update_nvs_uri = {
 			.uri	  = "/u_nvs",

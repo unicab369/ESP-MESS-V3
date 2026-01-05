@@ -191,7 +191,7 @@ function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 function onCreateEntry(is_file) {
 	if (is_file) {
 		show_textArea_modal('Create File', '', '', `
-			<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+			<button onclick="handleModifyFile()" class="w3-button w3-blue w3-round" style="flex: 1;">
 				Create
 			</button>
 			
@@ -233,6 +233,17 @@ function onEditEntry(index) {
 
 function handleModifyFile() {
 	const new_name = document.getElementById('field1-value').value.trim()
+	const text = document.getElementById('area1-value').value.trim() ?? ''
+	const splits = new_name.split('.')
+
+	if (splits.length !== 2 && (splits[0].length < 1 || splits[1] != 'txt')) {
+		alert('Invalid name')
+		return
+	}
+
+	service_modifyFile(new_name, text, () => {
+		close_field_modal()
+	})
 }
 
 function handleUpdateEntry(old_name, is_delete = false) {
