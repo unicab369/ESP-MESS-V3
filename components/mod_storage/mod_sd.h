@@ -408,7 +408,7 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
 	
-	printf("configs count: %d\n", count);
+	ESP_LOGW(TAG_SD, "configs count: %d\n", count);
 	*ptr++ = ']';
 	*ptr = '\0';
 	return ptr - buffer; // Return length
@@ -435,7 +435,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
 	
-	printf("caches count: %d\n", count);
+	ESP_LOGW(TAG_SD, "caches count: %d\n", count);
 	*ptr++ = ']';
 	*ptr = '\0';
 	return ptr - buffer; // Return length

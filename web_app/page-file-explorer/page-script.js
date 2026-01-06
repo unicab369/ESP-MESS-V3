@@ -210,10 +210,7 @@ function handleModifyFile(old_path = '') {
 		return
 	}
 
-	const newPath = PATH_ENTRIES.join('*') + '*' + new_name
-	// const oldPath = PATH_ENTRIES.join('*') + '*' + old_name
-
-	service_updateFile(newPath, old_path, text, () => {
+	service_updateFile(makeFullPath(new_name), old_path, text, () => {
 		const firstEntry = PATH_ENTRIES.find(() => true)
 		reloadEntry(firstEntry)
 		close_field_modal()
