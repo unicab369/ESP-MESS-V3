@@ -114,7 +114,7 @@ esp_err_t send_http_file(httpd_req_t *req, const char *path) {
 	}
 
 	// Stream file content in chunks
-	char buffer[256];
+	char buffer[1024];
 	size_t bytes_read;
 	size_t total_bytes = 0;
 	uint32_t timestamp = esp_timer_get_time();
@@ -500,7 +500,6 @@ esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 
 	char query[128];
 	char path[64] = {0};
-	char output[1024] = {0};
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -566,4 +565,81 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	}
 
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+}
+
+//###################################################
+//# Diagnostic Helpers
+//###################################################
+
+#include "esp_partition.h"
+
+int make_partition_tableStr(char *buffer) {
+	char *ptr = buffer;  // Pointer to current position
+	
+	esp_partition_iterator_t it = esp_partition_find(
+		ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+	
+	while (it) {
+		const esp_partition_t* part = esp_partition_get(it);
+		int written = sprintf(ptr, "%s %dKB, ", part->label, (int)(part->size / 1024));
+		ptr += written;  // Move pointer forward
+		it = esp_partition_next(it);
+	}
+	
+	esp_partition_iterator_release(it);
+	*ptr++ = '\n';
+	*ptr = '\0';  // Null-terminate
+	return ptr - buffer; 
+}
+
+//! NOTE: Required: FreeRTOS Trace Facility
+// idf.py menuconfig > Component config > FreeRTOS > Kernal
+// check configUSE_TRACE_FACILITY and configUSE_STATS_FORMATTING_FUNCTIONS
+#define MAX_PRINTING_TASKS 20  // Reasonable maximum
+
+int make_detailed_sramStr(char *buffer) {
+	// Get heap info for internal memory
+	multi_heap_info_t heap_info;
+	heap_caps_get_info(&heap_info, MALLOC_CAP_INTERNAL);
+
+	// Calculate
+	int free_sram_kb = heap_info.total_free_bytes / 1024;
+	int used_sram_kb = heap_info.total_allocated_bytes / 1024;
+	int total_sram_kb = free_sram_kb + used_sram_kb;
+	int used_percent = (used_sram_kb * 100) / total_sram_kb;
+	int free_percent = (free_sram_kb * 100) / total_sram_kb;
+
+	char *ptr = buffer;  // Pointer to current position
+
+	int written = sprintf(ptr, "SRAM %dK = %dK(%d%% used) + %dK(%d%% free)\n",
+			total_sram_kb, used_sram_kb, used_percent, free_sram_kb, free_percent);
+	ptr += written;
+	written = sprintf(ptr, "Blocks: %d used + %d free\n",
+			heap_info.allocated_blocks, heap_info.free_blocks);
+	ptr += written;
+	
+	// largest_free_block is the size of the largest free block in the heap
+	// minimum_free_bytes is the lifetime minimum free heap size
+	written = sprintf(ptr, "Largest Free Block: %3dK\n", heap_info.largest_free_block / 1024);
+	ptr += written;
+	written = sprintf(ptr, "Lifetime min Free: %3dK\n", heap_info.minimum_free_bytes / 1024);
+	ptr += written;
+	*ptr = '\0';  // Null-terminate
+	return ptr - buffer;
+}
+
+int make_tasks_watermarksStr(char *buffer) {
+    static TaskStatus_t tasks[MAX_PRINTING_TASKS];  // No malloc/free!
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    if (task_count > MAX_PRINTING_TASKS) task_count = MAX_PRINTING_TASKS;
+    task_count = uxTaskGetSystemState(tasks, task_count, NULL);
+	char *ptr = buffer;  // Pointer to current position
+
+	for (int i = 0; i < task_count; i++) {
+		uint32_t min_free_bytes = tasks[i].usStackHighWaterMark * sizeof(StackType_t);
+		int written = sprintf(ptr, "%s %lu\n", tasks[i].pcTaskName, min_free_bytes);
+		ptr += written;
+	}
+	*ptr = '\0';  // Null-terminate
+	return ptr - buffer;
 }

@@ -9,7 +9,7 @@
 #include "esp_wifi.h"
 #include <esp_http_server.h>
 
-static const char *TAG_HTTP = "[HTTP]";
+static const char *TAG_HTTP = "#HTTP";
 
 static const char *HTML_PAGE = 
 "<!DOCTYPE html>"

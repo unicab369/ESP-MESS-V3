@@ -5,7 +5,6 @@
 #include "esp_timer.h"
 
 #include "esp_log.h"
-#include "nvs_flash.h"
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 
@@ -17,9 +16,8 @@
 
 #define RECORD_SIZE = 10; // 4 + 2 + 2 + 2 = 10 bytes
 
-static const char *TAG = "[APP]";
+static const char *TAG = "#APP";
 static uint8_t s_led_state = 0;
-
 
 int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
@@ -38,17 +36,54 @@ void SERV_RELOAD_LOGS() {
 	}
 
 	uint8_t log_sd = 0, log_http = 0, log_app = 0;
+	uint8_t log_diag1 = 0, log_diag2 = 0, log_diag3 = 0;
+
 	nvs_get_u8(NVS_HANDLER, "SD", &log_sd);
 	nvs_get_u8(NVS_HANDLER, "HTTP", &log_http);
 	nvs_get_u8(NVS_HANDLER, "APP", &log_app);
+	nvs_get_u8(NVS_HANDLER, "DIAG1", &log_diag1);
+	nvs_get_u8(NVS_HANDLER, "DIAG2", &log_diag2);
+	nvs_get_u8(NVS_HANDLER, "DIAG3", &log_diag3);
 	nvs_close(NVS_HANDLER);
-	ESP_LOGW(TAG, "Update Logs SD:%d, HTTP:%d, APP:%d", log_sd, log_http, log_app);
+
+	ESP_LOGW(TAG, "Update Logs \nSD:%d, HTTP:%d, APP:%d \nDIAG1:%d, DIAG2:%d, DIAG3:%d",
+		log_sd, log_http, log_app,
+		log_diag1, log_diag2, log_diag3
+	);
 
 	//# Set Logs level
 	esp_log_level_set(TAG_SD, log_sd);
 	esp_log_level_set(TAG_HTTP, log_http);
 	esp_log_level_set(TAG, log_app);
+	esp_log_level_set("#DIAG1", log_diag1);
+	esp_log_level_set("#DIAG2", log_diag2);
+	esp_log_level_set("#DIAG3", log_diag3);
 }
+
+void filtered_log_handler() {
+	char output[256] = {0};
+
+	if (esp_log_level_get("#DIAG1") > 1) {
+		ESP_LOGW("#DIAG1", "Partition Table");
+		make_partition_tableStr(output);
+		printf("%s", output);
+	}
+	if (esp_log_level_get("#DIAG2") > 1) {
+		ESP_LOGW("#DIAG2", "SRAM Breakdown");
+		make_detailed_sramStr(output);
+		printf("%s", output);
+	}
+	if (esp_log_level_get("#DIAG3") > 1) {
+		ESP_LOGW("#DIAG3", "Task Watermarks");
+		make_tasks_watermarksStr(output);
+		printf("%s", output);
+	}
+
+    // int pos = make_partition_tableStr(buffer);
+    // pos += make_partition_tableStr2(buffer + pos);
+    // return pos;
+}
+
 
 void app_main(void) {
 	esp_err_t ret;
@@ -139,6 +174,9 @@ void app_main(void) {
 		}
 
 		wifi_poll();
+
+		filtered_log_handler();
+
 		vTaskDelay(1000/portTICK_PERIOD_MS);
 	}
 }
