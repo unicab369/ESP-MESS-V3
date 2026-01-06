@@ -130,7 +130,11 @@ async function service_getDeviceLog(chart_id, onComplete) {
 	}
 }
 
-async function service_getFiles(entry, onComplete) {
+//############################################
+//# ENTRY SERVICES
+//############################################
+
+async function service_getEntries(entry, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
@@ -195,18 +199,22 @@ async function service_updateEntry(new_path, old_path, is_file, onComplete) {
 	}
 }
 
-async function service_modifyFile(path, content, onComplete) {
+
+//############################################
+//# FILE SERVICES
+//############################################
+
+async function service_getFile(path, onComplete) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
 	const params = new URLSearchParams({
-		path: path,
-		txt: content
+		path: path
 	})
 
 	try {
 		// Load config
-		const resp = await fetch(`http://${serverIp}/m_file?${params.toString()}`, {
+		const resp = await fetch(`http://${serverIp}/g_file?${params.toString()}`, {
 			method: 'GET'
 		})
 		console.log('%crequest: %s', 'color: purple', resp.url)
@@ -224,6 +232,44 @@ async function service_modifyFile(path, content, onComplete) {
 		console.error('Connection error:', error)
 	}
 }
+
+async function service_updateFile(new_path, old_path, content, onComplete) {
+	const serverIp = get_serverIp()
+	if (!serverIp) return
+
+	// has new_path, no old_path => Create
+	// no new_path, has old_path => Delete
+	// has new_path, has old_path => Update
+	const params = new URLSearchParams({
+		new: new_path,
+		old: old_path,
+		txt: content
+	})
+
+	try {
+		// Load config
+		const resp = await fetch(`http://${serverIp}/u_file?${params.toString()}`, {
+			method: 'GET'
+		})
+		console.log('%crequest: %s', 'color: purple', resp.url)
+
+		if (resp.ok) {
+			const result = await resp.text()
+			console.log('%cresult:', 'color: purple', result)
+			onComplete?.(result)
+		} else {
+			const errorText = await resp.text()
+			console.error('Server error:', errorText)
+		}
+	}
+	catch(error) {
+		console.error('Connection error:', error)
+	}
+}
+
+//############################################
+//# NSV SERVICES
+//############################################
 
 async function service_requestNVS(
 	namespace, new_key, old_key, value, type, onComplete

@@ -1,6 +1,10 @@
 var PATH_ENTRIES = []
 var folders_files = []
 
+function makeFullPath(entry) {
+	return PATH_ENTRIES.join('*') + '*' + entry
+}
+
 const nvs_type_map = {
 	1: 'u8', 2: 'u16', 4: 'u32', 8: 'u64',
 	17: 'i8', 18: 'i16', 20: 'i32', 24: 'i64',
@@ -41,7 +45,7 @@ function onEraseNSV(old_key) {
 }
 
 function reloadNVS(sub_entry = 'nvs') {
-	service_getFiles(sub_entry, (result) => {
+	service_getEntries(sub_entry, (result) => {
 		const sorted = result.sort((a, b) => {
 			return (a[0]+a[1]).toUpperCase().localeCompare((b[0]+b[1]).toUpperCase())
 		})
@@ -72,7 +76,6 @@ function reloadNVS(sub_entry = 'nvs') {
 			<button class="btn" style="color: red;" onclick="showEraseNSV()">🗑️ Erase Namespace</button>`
 	})
 }
-
 
 function onEditNVS(target) {
 	console.log("onEditNVS:", target)
@@ -128,68 +131,127 @@ function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 	sub_entry = PATH_ENTRIES.join('*')
 	console.log("sub_entry:", sub_entry)
 
-	service_getFiles(sub_entry, (result) => {
+	service_getEntries(sub_entry, (result) => {
 		let html = /*html*/
 			`<div onclick="backEntry()" style="display: flex; align-items: center; padding: 8px; 
 												border-bottom: 1px solid #eee; gap: 10px;">
 				<div>⬅️ Back</div>
 			</div>`
 
-		const is_text = sub_entry.toUpperCase().includes('.TXT')
-
-		if (is_text) {
-			html += /*html*/
-				`<div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-						<div style="white-space: pre-wrap;">${result}</div>
-				</div>`
-		}
-		else {
-			// show error if there are more than 1 PATH_ENTRIES
-			if (PATH_ENTRIES.length < 2) html = ``
+		// show error if there are more than 1 PATH_ENTRIES
+		if (PATH_ENTRIES.length < 2) html = ``
+		
+		// Sort folders first
+		folders_files = result.sort((a, b) => {
+			const aIsFolder = !a.includes('.')
+			const bIsFolder = !b.includes('.')
 			
-			// Sort folders first
-			folders_files = result.sort((a, b) => {
-				const aIsFolder = !a.includes('.')
-				const bIsFolder = !b.includes('.')
-				
-				// If one is folder and other isn't, folder comes first
-				if (aIsFolder && !bIsFolder) return -1
-				if (!aIsFolder && bIsFolder) return 1
-				
-				// Both are same type, sort alphabetically
-				return a.localeCompare(b)
+			// If one is folder and other isn't, folder comes first
+			if (aIsFolder && !bIsFolder) return -1
+			if (!aIsFolder && bIsFolder) return 1
+			
+			// Both are same type, sort alphabetically
+			return a.localeCompare(b)
+		})
+
+		// Update UI
+		if (folders_files.length === 0) {
+			html += '<div style="text-align: center; padding: 20px; color: #666;">No Entry found</div>';
+		} else {
+			// For each cell
+			folders_files.forEach((item, index) => {
+				const is_file = item.split('.').length === 2
+
+				html += is_file ?
+					`
+						<div onclick="onEditFile('${item}', false)" 
+							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+							<div style="flex: 1;">📄 ${item}</div>
+						</div>
+					`
+					: `<div onclick="reloadEntry('${item}', false)" 
+							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
+						<div style="flex: 1;">📁 ${item}</div>
+
+						<div onclick="event.stopPropagation(); onEditEntry('${index}')" 
+							style="background: gray; color: white; padding: 5px 12px; border-radius: 10px;">
+							✎ Edit
+						</div>
+					</div>`
 			})
-
-			// Update UI
-			if (folders_files.length === 0) {
-				html += '<div style="text-align: center; padding: 20px; color: #666;">No Files found</div>';
-			} else {
-				// For each cell
-				folders_files.forEach((item, index) => {
-					html += /*html*/
-						`<div onclick="reloadEntry('${item}', false)" 
-								style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-							<div style="flex: 1;">${item.includes('.') ? '📄' : '📁'} ${item}</div>
-
-							<div onclick="event.stopPropagation(); onEditEntry('${index}')" 
-								style="background: gray; color: white; padding: 5px 12px; border-radius: 10px;">
-								✎ Edit
-							</div>
-						</div>`
-				})
-			}
 		}
 		
 		document.getElementById('list-container').innerHTML = html
 		document.getElementById('button-container').innerHTML = /*html*/
-			`<button class="btn" onclick="onCreateEntry(0)">📂 Add Folder</button>
-			<button class="btn" onclick="onCreateEntry(1)">📄 Add File</button>`
+			`<button class="btn" onclick="onCreateFolder()">📂 Add Folder</button>
+			<button class="btn" onclick="onEditFile()">📄 Add File</button>`
 	})
 }
 
+function onCreateFolder() {
+	show_field_modal('Create Folder', '', `
+		<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
+			Create
+		</button>
+		
+		<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+			Cancel
+		</button>`
+	)	
+}
 
-function onCreateEntry(is_file) {
-	if (is_file) {
+function handleModifyFile(old_path = '') {
+	const new_name = document.getElementById('field1-value').value.trim()
+	const text = document.getElementById('area1-value').value.trim() ?? ''
+	const splits = new_name.split('.')
+
+	if (splits.length !== 2 && (splits[0].length < 1 || splits[1] != 'txt')) {
+		alert('Invalid name')
+		return
+	}
+
+	const newPath = PATH_ENTRIES.join('*') + '*' + new_name
+	// const oldPath = PATH_ENTRIES.join('*') + '*' + old_name
+
+	service_updateFile(newPath, old_path, text, () => {
+		const firstEntry = PATH_ENTRIES.find(() => true)
+		reloadEntry(firstEntry)
+		close_field_modal()
+	})
+}
+
+function handleDeleteFile(old_path) {
+	if (!old_path) return
+
+	if (confirm('Are you sure you want to delete this file?')) {
+		service_updateFile('', old_path, '', () => {
+			const firstEntry = PATH_ENTRIES.find(() => true)
+			reloadEntry(firstEntry)
+			close_field_modal()
+		})
+	}
+}
+
+function onEditFile(old_name) {
+	if (old_name) {
+		const old_path = makeFullPath(old_name)
+
+		service_getFile(old_path, (result) => {
+			show_textArea_modal('Edit File', old_name, result, `
+				<button onclick="handleModifyFile('${old_path}')" class="w3-button w3-blue w3-round" style="flex: 1;">
+					Update
+				</button>
+				
+				<button onclick="handleDeleteFile('${old_path}')" class="w3-button w3-red w3-round" style="flex: 1;">
+					Delete
+				</button>
+
+				<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
+					Cancel
+				</button>`
+			)	
+		})
+	} else {
 		show_textArea_modal('Create File', '', '', `
 			<button onclick="handleModifyFile()" class="w3-button w3-blue w3-round" style="flex: 1;">
 				Create
@@ -199,17 +261,6 @@ function onCreateEntry(is_file) {
 				Cancel
 			</button>`
 		)
-	}
-	else {
-		show_field_modal('Create Folder', '', `
-			<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
-				Create
-			</button>
-			
-			<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
-				Cancel
-			</button>`
-		)	
 	}
 }
 
@@ -231,21 +282,6 @@ function onEditEntry(index) {
 	show_field_modal(title_str, old_name, buttons_div)
 }
 
-function handleModifyFile() {
-	const new_name = document.getElementById('field1-value').value.trim()
-	const text = document.getElementById('area1-value').value.trim() ?? ''
-	const splits = new_name.split('.')
-
-	if (splits.length !== 2 && (splits[0].length < 1 || splits[1] != 'txt')) {
-		alert('Invalid name')
-		return
-	}
-
-	service_modifyFile(new_name, text, () => {
-		close_field_modal()
-	})
-}
-
 function handleUpdateEntry(old_name, is_delete = false) {
 	console.log('old_name:', old_name)
 	console.log('entries:', PATH_ENTRIES)
@@ -265,8 +301,8 @@ function handleUpdateEntry(old_name, is_delete = false) {
 	}
 
 	const firstEntry = PATH_ENTRIES.find(() => true);
-	const newPath = PATH_ENTRIES.join('*') + '*' + new_name
-	const oldPath = PATH_ENTRIES.join('*') + '*' + old_name
+	const newPath = makeFullPath(new_name)
+	const oldPath = makeFullPath(old_name)
 	console.log("update: %s %s", newPath, oldPath)
 
 	if (is_delete) {

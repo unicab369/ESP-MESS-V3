@@ -216,6 +216,8 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req);
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void) {
@@ -296,6 +298,14 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &get_log_uri);
 
+		httpd_uri_t update_nvs_uri = {
+			.uri	  = "/u_nvs",
+			.method   = HTTP_GET,
+			.handler  = HTTP_UPDATE_NVS_HANDLER,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &update_nvs_uri);
+
 		httpd_uri_t get_entries_uri = {
 			.uri	  = "/g_entry",
 			.method   = HTTP_GET,
@@ -312,13 +322,21 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &update_entry_uri);
 
-		httpd_uri_t update_nvs_uri = {
-			.uri	  = "/u_nvs",
+		httpd_uri_t get_file_uri = {
+			.uri	  = "/g_file",
 			.method   = HTTP_GET,
-			.handler  = HTTP_UPDATE_NVS_HANDLER,
+			.handler  = HTTP_GET_FILE_HANDLER,
 			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &update_nvs_uri);
+		httpd_register_uri_handler(server, &get_file_uri);
+
+		httpd_uri_t update_file_uri = {
+			.uri	  = "/u_file",
+			.method   = HTTP_GET,
+			.handler  = HTTP_UPDATE_FILE_HANDLER,
+			.user_ctx = NULL,
+		};
+		httpd_register_uri_handler(server, &update_file_uri);
 
 		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
 	} else {
@@ -326,4 +344,55 @@ static httpd_handle_t start_webserver(void) {
 	}
 	
 	return server;
+}
+
+
+
+static void url_decode_inplace(char *str) {
+    char *src = str;
+    char *dst = str;
+    
+    while (*src) {
+        if (src[0] == '%' && src[1] && src[2]) {
+            // Decode %XX hex to char
+            char c1 = src[1];
+            char c2 = src[2];
+            
+            uint8_t val = 0;
+            if (c1 >= '0' && c1 <= '9') val = (c1 - '0') << 4;
+            else if (c1 >= 'A' && c1 <= 'F') val = (c1 - 'A' + 10) << 4;
+            else if (c1 >= 'a' && c1 <= 'f') val = (c1 - 'a' + 10) << 4;
+            
+            if (c2 >= '0' && c2 <= '9') val |= (c2 - '0');
+            else if (c2 >= 'A' && c2 <= 'F') val |= (c2 - 'A' + 10);
+            else if (c2 >= 'a' && c2 <= 'f') val |= (c2 - 'a' + 10);
+            
+            *dst++ = (char)val;
+            src += 3;
+        } else if (*src == '+') {
+            *dst++ = ' ';
+            src++;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
+// Decode new line only - %0A and %0D
+static void url_decode_newline(char *str) {
+    char *d = str;
+    
+    while (*str) {
+        if (str[0] == '%' && str[1] == '0' && (str[2] == 'A' || str[2] == 'a')) {
+            *d++ = '\n'; str += 3;
+        } else if (str[0] == '%' && str[1] == '0' && (str[2] == 'D' || str[2] == 'd')) {
+            *d++ = '\r'; str += 3;
+        } else if (*str == '+') {
+            *d++ = ' '; str++;
+        } else {
+            *d++ = *str++;
+        }
+    }
+    *d = '\0';
 }

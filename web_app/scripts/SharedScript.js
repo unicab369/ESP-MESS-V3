@@ -30,7 +30,8 @@ function show_textArea_modal(title, field1, area1, buttons_div) {
 	document.getElementById('field-modal').style.display='block'
 
     document.getElementById('field-modal').innerHTML = /*html*/
-		`<div class="w3-modal-content w3-container" style="max-width: 400px;">
+		`<div class="w3-modal-content w3-container" 
+				style="max-width: 80%; height: 80%; display: flex; flex-direction: column;">
 			<h2>${title}</h2>
 
 			<!-- New name input -->
@@ -43,10 +44,10 @@ function show_textArea_modal(title, field1, area1, buttons_div) {
 				</div>
 			</div>
 			
-			<div style="margin-bottom: 20px;">
+			<div style="flex: 1; display: flex; flex-direction: column; margin-bottom: 20px;">
 				<label style="display: block; margin-bottom: 5px; font-weight: 500;">String:</label>
 				<textarea id="area1-value" class="w3-input w3-border" placeholder="Content"
-						style="min-height: 200px; padding: 10px;" maxlength="500">${area1.trim()}</textarea>
+						style="flex: 1; padding: 10px; resize: vertical;" maxlength="500">${area1.trim()}</textarea>
 				<div style="text-align: right; font-size: 12px; color: #666; margin-top: 5px;">
 					0/500 characters
 				</div>

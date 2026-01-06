@@ -1,3 +1,4 @@
+#include <string.h>
 #include "lib_sd_log.h"
 #include "esp_timer.h"
 
@@ -181,6 +182,18 @@ esp_err_t sd_remove_file(const char *path) {
 		return ret;
 	}
 	return ESP_OK;
+}
+
+size_t sd_write_str(const char *path, const char *str) {
+    FILE *file = fopen(path, "w");
+    if (file == NULL) {
+        ESP_LOGE(TAG_SD, "Err: sd_write_str %s", path);
+        return 0;
+    }
+
+	size_t written = fwrite(str, 1, strlen(str), file);
+	fclose(file);
+	return written;
 }
 
 

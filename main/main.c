@@ -541,9 +541,82 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	} else {
 		len = sd_entries_to_json(entry_str, output, sizeof(output));
 	}
-	ESP_LOGW_SD(TAG_HTTP, "path %s", entry_str);
+	ESP_LOGW(TAG_HTTP, "path %s", entry_str);
 
 	return httpd_resp_send(req, output, len);
+}
+
+esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char path[64] = {0};
+	char output[1024] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "path", path, sizeof(path));
+	}
+
+	for (char *p = path; *p; p++) if (*p == '*') *p = '/';
+	ESP_LOGW(TAG_HTTP, "path %s", path);
+	int len = sd_read_tail(path, output, sizeof(output));
+	return httpd_resp_send(req, output, len);
+}
+
+esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char new_path[64] = {0};
+	char old_path[64] = {0};
+	char text_str[1024] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "new", new_path, sizeof(new_path));
+		httpd_query_key_value(query, "old", old_path, sizeof(old_path));
+		httpd_query_key_value(query, "txt", text_str, sizeof(text_str));
+	}
+
+	// replace '*' with '/'
+	for (char *p = new_path; *p; p++) if (*p == '*') *p = '/';
+	for (char *p = old_path; *p; p++) if (*p == '*') *p = '/';
+
+	esp_err_t ret;
+	int new_name_len = strlen(new_path);
+	int old_name_len = strlen(old_path);
+
+	// no old_name => Create
+	if (!old_name_len) {
+		ESP_LOGW(TAG, "create: %s", new_path);
+		url_decode_newline(text_str);
+		sd_write_str(new_path, text_str);
+	}
+	// no new_name => Delete
+	else if (!new_name_len) {
+		ESP_LOGW(TAG, "remove: %s", old_path);
+		sd_remove_file(old_path);
+	}
+	// otherwise => Rename
+	else if (new_name_len && old_name_len) {
+		ESP_LOGW(TAG, "rename: %s -> %s", old_path, new_path);
+		
+		ret = sd_rename(old_path, new_path);
+		if (ret == ESP_OK) {
+			url_decode_newline(text_str);
+			sd_write_str(new_path, text_str);
+			return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+		}
+	}
+
+	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
 void app_main(void) {

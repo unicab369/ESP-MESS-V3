@@ -19,6 +19,7 @@ int sd_entries_to_json(const char *path, char *json, int size);
 void sd_list_dirs(const char *base_path, int depth);
 size_t sd_read_file(const char *path, char *buff, size_t len);
 size_t sd_read_tail(const char *path, char *out, size_t max);
+size_t sd_write_str(const char *path, const char *str);
 
 esp_err_t sd_remove_file(const char *path);
 esp_err_t sd_rename(const char *old_path, const char *new_path);
