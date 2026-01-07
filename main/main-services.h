@@ -6,18 +6,23 @@
 #include "mod_spi.h"
 #include "mod_sd.h"
 
+#include "../components/analytics.h"
+
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
 SemaphoreHandle_t SD_MUTEX = NULL;
+atomic_stats_t http_stats = {0};
 
 void SERV_RELOAD_LOGS();
 
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
+	atomic_tracker_start(&http_stats);
 	// Set response headers
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
 
 	char response[1024];
 	int response_len = make_device_configs_str(response, sizeof(response));
+	atomic_tracker_end(&http_stats);
 	return httpd_resp_send(req, response, response_len);
 }
 

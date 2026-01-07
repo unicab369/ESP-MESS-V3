@@ -223,6 +223,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req);
 static httpd_handle_t start_webserver(void) {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+	config.max_open_sockets = 7;
 	config.uri_match_fn = httpd_uri_match_wildcard; 
 	
 	// Configure server
