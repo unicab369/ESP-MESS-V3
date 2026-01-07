@@ -103,7 +103,7 @@ void log_diagnostics_handler() {
 
 void app_main(void) {
 	esp_err_t ret;
-	SD_MUTEX = xSemaphoreCreateMutex();
+	FS_MUTEX = xSemaphoreCreateMutex();
 	ESP_LOGI(TAG, "APP START");
 	
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
@@ -185,10 +185,10 @@ void app_main(void) {
 					cache_device(uuid, now);
 
 					// $Take mutex
-					if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
+					if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
 						// sd_bin_record_all(uuid, now, &timeinfo, &records);
 						rotate_timeLog_write(uuid, now, &timeinfo, &records);
-						xSemaphoreGive(SD_MUTEX);  // $Release mutex
+						xSemaphoreGive(FS_MUTEX);  // $Release mutex
 					} else {
 						ESP_LOGW(TAG_SD, "SD card busy, skipping log write");
 					}
@@ -199,11 +199,12 @@ void app_main(void) {
 			toggle_led();
 			log_diagnostics_handler();
 
-			cycle_print(&main_cycle);
+			// cycle_print(&main_cycle);
 			cycle_reset(&main_cycle);
-			atomic_tracker_print(&http_stats);
+
+			// atomic_tracker_print(&http_stats);
 			atomic_tracker_reset(&http_stats);
-			
+
 			last_timestamp_us = now_us;
 		}
 

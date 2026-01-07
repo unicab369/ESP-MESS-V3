@@ -21,7 +21,7 @@
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
-static const char *TAG_WIFI = "[WIFI]";
+static const char *TAG_WIFI = "#WIFI";
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {

@@ -9,14 +9,14 @@
 #include "../components/analytics.h"
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
-SemaphoreHandle_t SD_MUTEX = NULL;
+SemaphoreHandle_t FS_MUTEX = NULL;
 atomic_stats_t http_stats = {0};
 
 void SERV_RELOAD_LOGS();
 
+
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	atomic_tracker_start(&http_stats);
-	// Set response headers
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
 
@@ -27,6 +27,7 @@ esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 }
 
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
+	atomic_tracker_start(&http_stats);
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "application/json");
 	
@@ -60,182 +61,8 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 	written = snprintf(ptr, remaining, "}");
 	ptr += written;
 	
+	atomic_tracker_end(&http_stats);
 	return httpd_resp_send(req, response, ptr - response);
-}
-
-esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_type(req, "text/plain");
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-
-	char device_id[9] = {0};
-	char config_str[16] = {0};
-
-	char query[128];
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));
-		httpd_query_key_value(query, "cfg", config_str, sizeof(config_str));
-	}
-
-	uint32_t uuid = hex_to_uint32_unrolled(device_id);
-
-	// Validate parameters
-	if (uuid < 1) {
-		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
-		return ESP_OK;
-	}
-
-	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
-	printf("Saving Config uuid: %08lX, Config: %ld\n", uuid, config);
-
-	if (sd_save_config(uuid, config) != ESP_OK) {
-		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save config");
-		return ESP_OK;
-	}
-
-	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
-}
-
-// NOTE: wiring and reading SD card must be done inside a 
-// Mutex lock to prevent conflicts with other tasks
-
-esp_err_t send_http_file(httpd_req_t *req, const char *path) {
-	// #Take Mutex - if SD card is locked (wait max 50 seconds)
-	if (xSemaphoreTake(SD_MUTEX, pdMS_TO_TICKS(50)) != pdTRUE) {
-		// SD card is busy - tell client to wait
-		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD card busy");
-		return ESP_OK;
-	}
-
-	FILE* file = fopen(path, "rb");
-	if (file == NULL) {
-		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
-		xSemaphoreGive(SD_MUTEX);   // #Release Mutex
-		// Send error response
-		httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-		return ESP_OK;
-	}
-
-	// Stream file content in chunks
-	char buffer[1024];
-	size_t bytes_read;
-	size_t total_bytes = 0;
-	uint32_t timestamp = esp_timer_get_time();
-
-	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {		
-		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
-		if (err != ESP_OK) {
-			ESP_LOGE(TAG_HTTP, "Err sending chunk: %d", err);
-			fclose(file);
-			xSemaphoreGive(SD_MUTEX);   // #Release Mutex
-			return err;
-		}
-		total_bytes += bytes_read;
-	}
-
-	uint32_t time_dif = (esp_timer_get_time() - timestamp)/1000;
-	ESP_LOGW_SD(TAG_HTTP, "path %s: %dBytes %ldms", path, total_bytes, time_dif);
-	fclose(file);
-	xSemaphoreGive(SD_MUTEX);   // #Release mutex
-
-	// End chunked response
-	return httpd_resp_send_chunk(req, NULL, 0);
-}
-
-esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-	httpd_resp_set_type(req, "text/plain");
-
-	char query[128];
-	char type_str[4] = {0};
-	char size_str[8] = {0};
-	char pa_str[16] = {0};
-	char pb_str[16] = {0};
-	char pc_str[16] = {0};
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
-		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
-		httpd_query_key_value(query, "pa", pa_str, sizeof(pa_str));
-		httpd_query_key_value(query, "pb", pb_str, sizeof(pb_str));
-		httpd_query_key_value(query, "pc", pc_str, sizeof(pc_str));
-	}
-
-	int type = atoi(type_str);
-	int size = atoi(size_str);
-
-	char full_path[64];
-	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
-
-	return send_http_file(req, full_path);
-}
-
-// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
-// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
-// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
-
-esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
-	httpd_resp_set_type(req, "text/plain");
-	
-	char query[128];
-	char device_id[9] = {0};
-	char year[5] = {0};
-	char month[3] = {0};
-	char day[3] = {0};
-	char win[8] = {0};
-	int timeWindow = 0;
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
-		httpd_query_key_value(query, "yr", year, sizeof(year));
-		httpd_query_key_value(query, "mth", month, sizeof(month));
-		httpd_query_key_value(query, "day", day, sizeof(day));
-		httpd_query_key_value(query, "win", win, sizeof(win));
-		timeWindow = atoi(win);
-	}
-
-	// Validate parameters
-	if (year < 0 || (month < 0 && day < 0)) {
-		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
-		return ESP_OK;
-	}
-	ESP_LOGW_SD(TAG_HTTP, "Request dev: %s, yr: %s, mth: %s, day: %s, window: %d", 
-		device_id, year, month, day, timeWindow);
-
-	// Check if device is valid
-	uint32_t uuid = hex_to_uint32_unrolled(device_id);
-	int found_and_validated = 0;
-
-	for (int i=0; i < LOG_RECORD_COUNT; i++) {
-		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].last_log_rotation_sec > 0) {
-			found_and_validated = 1;
-			break;
-		}
-	}
-
-	if (!found_and_validated) {
-		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing Data");
-		return ESP_OK;
-	}
-
-	//# Fetch data from SD card
-	char path_str[64];
-	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
-	} else {
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/latest.bin", device_id, year);
-	}
-
-	return send_http_file(req, path_str);
 }
 
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
@@ -405,6 +232,198 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 	}
 }
 
+
+int FS_ACCESS_START(httpd_req_t *req) {
+	atomic_tracker_start(&http_stats);
+
+	// #Take Mutex - if FS is locked (wait max 50 seconds)
+	// also prevent changes on params when multiple clients request simultaneously
+	if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) != pdTRUE) {
+		// FS is busy - tell client to wait
+		atomic_tracker_end(&http_stats);
+		httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "FS busy");
+		return 0;
+	}
+
+	return 1;
+}
+
+void FS_ACCESS_RELEASE() {
+	xSemaphoreGive(FS_MUTEX);
+	atomic_tracker_end(&http_stats);
+}
+
+// fs_access
+esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char device_id[9] = {0};
+	char config_str[16] = {0};
+
+	char query[128];
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));
+		httpd_query_key_value(query, "cfg", config_str, sizeof(config_str));
+	}
+
+	// Validate parameters
+	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+	if (uuid < 1) {
+		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
+	}
+
+	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
+	printf("Saving Config uuid: %08lX, Config: %ld\n", uuid, config);
+
+	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
+	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
+	if (sd_save_config(uuid, config) != ESP_OK) {
+		FS_ACCESS_RELEASE();	//# FS RELEASE
+		return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save config");
+	}
+
+	FS_ACCESS_RELEASE();	//# FS RELEASE
+	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
+}
+
+// fs_access
+esp_err_t send_http_file(httpd_req_t *req, const char *path) {
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
+	FILE* file = fopen(path, "rb");
+	if (file == NULL) {
+		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
+		FS_ACCESS_RELEASE();	//# FS RELEASE
+		return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+	}
+
+	// Stream file content in chunks
+	char buffer[1024];
+	size_t bytes_read;
+	size_t total_bytes = 0;
+	uint32_t timestamp = esp_timer_get_time();
+
+	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {		
+		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG_HTTP, "Err sending chunk: %d", err);
+			fclose(file);
+			FS_ACCESS_RELEASE();	//# FS RELEASE
+			return err;
+		}
+		total_bytes += bytes_read;
+	}
+
+	uint32_t time_dif = (esp_timer_get_time() - timestamp)/1000;
+	ESP_LOGW_SD(TAG_HTTP, "path %s: %dBytes %ldms", path, total_bytes, time_dif);
+
+	fclose(file);
+	FS_ACCESS_RELEASE();	//# FS RELEASE
+	return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+// fs_access -internal
+esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char type_str[4] = {0};
+	char size_str[8] = {0};
+	char pa_str[16] = {0};
+	char pb_str[16] = {0};
+	char pc_str[16] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
+		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
+		httpd_query_key_value(query, "pa", pa_str, sizeof(pa_str));
+		httpd_query_key_value(query, "pb", pb_str, sizeof(pb_str));
+		httpd_query_key_value(query, "pc", pc_str, sizeof(pc_str));
+	}
+
+	int type = atoi(type_str);
+	int size = atoi(size_str);
+
+	char full_path[64];
+	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
+	return send_http_file(req, full_path);
+}
+
+// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
+// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
+// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
+
+// fs_access - internal
+esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_type(req, "text/plain");
+	
+	char query[128];
+	char device_id[9] = {0};
+	char year[5] = {0};
+	char month[3] = {0};
+	char day[3] = {0};
+	char win[8] = {0};
+	int timeWindow = 0;
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
+		httpd_query_key_value(query, "yr", year, sizeof(year));
+		httpd_query_key_value(query, "mth", month, sizeof(month));
+		httpd_query_key_value(query, "day", day, sizeof(day));
+		httpd_query_key_value(query, "win", win, sizeof(win));
+		timeWindow = atoi(win);
+	}
+
+	// Validate parameters
+	if (year < 0 || (month < 0 && day < 0)) {
+		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
+		return ESP_OK;
+	}
+	ESP_LOGW_SD(TAG_HTTP, "Request dev: %s, yr: %s, mth: %s, day: %s, window: %d", 
+		device_id, year, month, day, timeWindow);
+
+	// Check if device is valid
+	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+	int found_and_validated = 0;
+
+	for (int i=0; i < LOG_RECORD_COUNT; i++) {
+		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].last_log_rotation_sec > 0) {
+			found_and_validated = 1;
+			break;
+		}
+	}
+
+	if (!found_and_validated) {
+		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing Data");
+		return ESP_OK;
+	}
+
+	// get the path
+	char path_str[64];
+	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
+	} else {
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/latest.bin", device_id, year);
+	}
+
+	return send_http_file(req, path_str);
+}
+
+// fs_access
 esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
@@ -431,6 +450,10 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	int old_name_len = strlen(old_path);
 	int is_file = atoi(isFile_str);
 
+	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
+	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
 	// no old_name => Create
 	if (!old_name_len) {
 		ESP_LOGW(TAG_HTTP, "create: %s", new_path);
@@ -449,16 +472,14 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	// otherwise => Rename
 	else if (new_name_len && old_name_len) {
 		ESP_LOGW(TAG_HTTP, "rename: %s -> %s", old_path, new_path);
-		
 		ret = sd_rename(old_path, new_path);
-		if (ret == ESP_OK) {
-			return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
-		}
 	}
 
+	FS_ACCESS_RELEASE();
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
+// fs_access
 esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
@@ -495,21 +516,29 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 		if (*p == '*') *p = '/';
 	}
 
+	ESP_LOGW(TAG_HTTP, "path %s", entry_str);
 	int is_txt = atoi(txt_str);
 	int is_bin = atoi(bin_str);
-
 	int len = 0;
-	if (is_txt || is_bin) {
-		httpd_resp_set_type(req, "text/plain");
-		len = sd_read_tail(entry_str, output, sizeof(output));
-	} else {
-		len = sd_entries_to_json(entry_str, output, sizeof(output));
-	}
-	ESP_LOGW(TAG_HTTP, "path %s", entry_str);
 
+	if (!is_txt && !is_bin) {
+		len = sd_entries_to_json(entry_str, output, sizeof(output));
+		return httpd_resp_send(req, output, len);
+	}
+
+	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
+	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
+	// text or binary
+	httpd_resp_set_type(req, "text/plain");
+	len = sd_read_tail(entry_str, output, sizeof(output));
+
+	FS_ACCESS_RELEASE();	//# FS RELEASE
 	return httpd_resp_send(req, output, len);
 }
 
+// fs_access -internal
 esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
@@ -527,10 +556,9 @@ esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 	for (char *p = path; *p; p++) if (*p == '*') *p = '/';
 	ESP_LOGW(TAG_HTTP, "path %s", path);
 	return send_http_file(req, path);
-	// int len = sd_read_tail(path, output, sizeof(output));
-	// return httpd_resp_send(req, output, len);
 }
 
+// fs_access
 esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
@@ -557,6 +585,10 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	int new_name_len = strlen(new_path);
 	int old_name_len = strlen(old_path);
 
+	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
+	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
 	// no old_name => Create
 	if (!old_name_len) {
 		ESP_LOGW(TAG_HTTP, "create: %s", new_path);
@@ -576,10 +608,10 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 		if (ret == ESP_OK) {
 			url_decode_newline(text_str);
 			sd_write_str(new_path, text_str);
-			return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 		}
 	}
 
+	FS_ACCESS_RELEASE();		//# FS RELEASE
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 

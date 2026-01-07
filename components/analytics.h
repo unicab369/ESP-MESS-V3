@@ -5,49 +5,49 @@ static const char *TAG_ATOMIC = "#ATOM";
 static const char *TAG_CYCLE = "#CYC";
 
 typedef struct {
-	atomic_uint current;
-	atomic_uint peak;
-	atomic_uint total;
+	atomic_uint current_concurrent;
+	atomic_uint peak_concurrent;
+	atomic_uint total_instances;
 } atomic_stats_t;
 
 void atomic_tracker_start(atomic_stats_t *stats) {
 	// Get new count after increment
-	uint32_t new_count = atomic_fetch_add(&stats->current, 1) + 1;
-	atomic_fetch_add(&stats->total, 1);
+	uint32_t new_count = atomic_fetch_add(&stats->current_concurrent, 1) + 1;
+	atomic_fetch_add(&stats->total_instances, 1);
 	
 	// Update peak using compare_exchange
 	uint32_t current_peak;
 	do {
-		current_peak = atomic_load(&stats->peak);
+		current_peak = atomic_load(&stats->peak_concurrent);
 		if (new_count <= current_peak) break;
-	} while (!atomic_compare_exchange_weak(&stats->peak, &current_peak, new_count));
+	} while (!atomic_compare_exchange_weak(&stats->peak_concurrent, &current_peak, new_count));
 }
 
 void atomic_tracker_end(atomic_stats_t *stats) {
-    uint32_t current = atomic_load(&stats->current);
+    uint32_t current = atomic_load(&stats->current_concurrent);
     if (current > 0) {
-        atomic_fetch_sub(&stats->current, 1);
+        atomic_fetch_sub(&stats->current_concurrent, 1);
     } else {
         ESP_LOGW(TAG_ATOMIC, "Attempt to end non-existent request!");
     }
 }
 
 void atomic_tracker_reset(atomic_stats_t *stats) {
-	atomic_store(&stats->current, 0);
-	atomic_store(&stats->peak, 0);
-	atomic_store(&stats->total, 0);
+	atomic_store(&stats->current_concurrent, 0);
+	atomic_store(&stats->peak_concurrent, 0);
+	atomic_store(&stats->total_instances, 0);
 }
 
 void atomic_tracker_get(atomic_stats_t *stats, int *current, int *peak, int *total) {
-	*current = atomic_load(&stats->current);
-	*peak = atomic_load(&stats->peak);
-	*total = atomic_load(&stats->total);
+	*current = atomic_load(&stats->current_concurrent);
+	*peak = atomic_load(&stats->peak_concurrent);
+	*total = atomic_load(&stats->total_instances);
 }
 
 void atomic_tracker_print(atomic_stats_t *stats) {
 	int current, peak, total;
 	atomic_tracker_get(stats, &current, &peak, &total);
-	ESP_LOGI(TAG_ATOMIC, "Active: %u, Total: %u, Peak: %u", current, total, peak);
+	ESP_LOGI(TAG_ATOMIC, "Active: %u, Peak: %u, Total: %u", current, peak, total);
 }
 
 
