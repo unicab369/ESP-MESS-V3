@@ -14,16 +14,16 @@ static sdmmc_card_t *card;
 static esp_err_t check_sd_card(esp_err_t ret) {
 	if (ret == ESP_OK) {
 		//# Card has been initialized, print its properties
-		ESP_LOGI(TAG_SD, "Filesystem mounted");
+		ESP_LOGI(TAG_SF, "Filesystem mounted");
 		sdmmc_card_print_info(stdout, card);
 		return ret;
 	}
 
 	if (ret == ESP_FAIL) {
-		ESP_LOGE(TAG_SD, "Err: mount filesystem. "
+		ESP_LOGE(TAG_SF, "Err: mount filesystem. "
 				"Format the card if needed before use.");
 	} else {
-		ESP_LOGE(TAG_SD, "Err: initialize the card (%s). "
+		ESP_LOGE(TAG_SF, "Err: initialize the card (%s). "
 				"Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
 		#ifdef CONFIG_EXAMPLE_DEBUG_PIN_CONNECTIONS
 			check_sd_card_pins(&config, pin_count);
@@ -34,7 +34,7 @@ static esp_err_t check_sd_card(esp_err_t ret) {
 }
 
 esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
-	ESP_LOGI(TAG_SD, "Initializing SD card. Using SPI peripheral");
+	ESP_LOGI(TAG_SF, "Initializing SD card. Using SPI peripheral");
 
 	// For SoCs where the SD power can be supplied both via an internal or external (e.g. on-board LDO) power supply.
 	// When using specific IO pins (which can be used for ultra high-speed SDMMC) to connect to the SD card
@@ -47,7 +47,7 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 
 		ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &pwr_ctrl_handle);
 		if (ret != ESP_OK) {
-			ESP_LOGE(TAG_SD, "Failed to create a new on-chip LDO power control driver");
+			ESP_LOGE(TAG_SF, "Failed to create a new on-chip LDO power control driver");
 			return;
 		}
 		host.pwr_ctrl_handle = pwr_ctrl_handle;
@@ -63,7 +63,7 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 	static sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 	// host.slot = spi_host;
 
-	ESP_LOGI(TAG_SD, "Mounting filesystem");
+	ESP_LOGI(TAG_SF, "Mounting filesystem");
 	esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 		.format_if_mount_failed = false,
 		.max_files = 5,
@@ -161,7 +161,7 @@ void sd_mmc_config(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8
 
 int sd_card_info(char *buffer) {
 	if (!card) {
-		ESP_LOGE(TAG_SD, "No SD card initialized");
+		ESP_LOGE(TAG_SF, "No SD card initialized");
 		return 0;
 	}
 
@@ -180,7 +180,7 @@ int sd_card_info(char *buffer) {
 	FRESULT res = f_getfree("0:/", &free_clusters, &fs);
 	
 	if (res != FR_OK) {
-		ESP_LOGE(TAG_SD, "Err: f_getfree %d", res);
+		ESP_LOGE(TAG_SF, "Err: f_getfree %d", res);
 		return ptr - buffer;
 	}
 
@@ -199,7 +199,7 @@ int sd_card_info(char *buffer) {
 void storage_sd_format_card() {
 	esp_err_t ret = esp_vfs_fat_sdcard_format(SD_POINT, card);
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG_SD, "Err: format FATFS (%s)", esp_err_to_name(ret));
+		ESP_LOGE(TAG_SF, "Err: format FATFS (%s)", esp_err_to_name(ret));
 		return;
 	}
 }
@@ -208,7 +208,7 @@ esp_err_t sd_rename(const char *old_path, const char *new_path) {
 	esp_err_t ret = rename(old_path, new_path);
 	
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG_SD, "Err: sd_rename (%s)", esp_err_to_name(ret));
+		ESP_LOGE(TAG_SF, "Err: sd_rename (%s)", esp_err_to_name(ret));
 		return ret;
 	}
 	return ESP_OK;
@@ -218,7 +218,7 @@ esp_err_t sd_remove_file(const char *path) {
 	esp_err_t ret = remove(path);
 	
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG_SD, "Err: sd_remove_file (%s)", esp_err_to_name(ret));
+		ESP_LOGE(TAG_SF, "Err: sd_remove_file (%s)", esp_err_to_name(ret));
 		return ret;
 	}
 	return ESP_OK;
@@ -227,7 +227,7 @@ esp_err_t sd_remove_file(const char *path) {
 size_t sd_write_str(const char *path, const char *str) {
     FILE *file = fopen(path, "w");
     if (file == NULL) {
-        ESP_LOGE(TAG_SD, "Err: sd_write_str %s", path);
+        ESP_LOGE(TAG_SF, "Err: sd_write_str %s", path);
         return 0;
     }
 
@@ -241,7 +241,7 @@ size_t sd_write_str(const char *path, const char *str) {
 void sd_deinit(spi_host_device_t slot) {
 	// unmount partition and disable SPI peripheral
 	esp_vfs_fat_sdcard_unmount(SD_POINT, card);
-	ESP_LOGI(TAG_SD, "Card unmounted");
+	ESP_LOGI(TAG_SF, "Card unmounted");
 
 	// deinitialize the bus after all devices are removed
 	spi_bus_free(slot);
@@ -250,7 +250,7 @@ void sd_deinit(spi_host_device_t slot) {
 size_t sd_read_file(const char *path, char *buff, size_t len) {
 	FILE *f = fopen(path, "r");
     if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Err sd_read_file: %s", path);
+		ESP_LOGE_SD(TAG_SF, "Err sd_read_file: %s", path);
 		return 0;
 	}
 	
@@ -271,7 +271,7 @@ size_t sd_read_file(const char *path, char *buff, size_t len) {
 size_t sd_read_tail(const char *path, char *out, size_t max) {
     FILE *f = fopen(path, "rb");
     if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Err sd_read_tail: %s", path);
+		ESP_LOGE_SD(TAG_SF, "Err sd_read_tail: %s", path);
 		return 0;
 	}
     
@@ -344,7 +344,7 @@ void rotate_log_write(rotate_log_t *log, const char *msg) {
 		log->file = fopen(path, log->lines == 0 ? "w" : "a");
 
 		if (!log->file) {
-			ESP_LOGE(TAG_SD, "open err rotate_log: %s", path);
+			ESP_LOGE(TAG_SF, "open err rotate_log: %s", path);
 			return;
 		}
 	}
@@ -445,7 +445,7 @@ void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...) {
 int sd_remove_dir_recursive(const char* path) {
 	DIR* dir = opendir(path);
 	if (!dir) {
-		ESP_LOGE(TAG_SD, "Err open directory: %s", path);
+		ESP_LOGE(TAG_SF, "Err open directory: %s", path);
 		return 0;
 	}
 
@@ -464,7 +464,7 @@ int sd_remove_dir_recursive(const char* path) {
 		
 		struct stat statbuf;
 		if (stat(full_path, &statbuf) != 0) {
-			ESP_LOGW(TAG_SD, "Cannot stat: %s", full_path);
+			ESP_LOGW(TAG_SF, "Cannot stat: %s", full_path);
 			continue;
 		}
 		
@@ -476,11 +476,11 @@ int sd_remove_dir_recursive(const char* path) {
 		} else {
 			// Remove file
 			if (remove(full_path) != 0) {
-				ESP_LOGE(TAG_SD, "Err remove file %s, error: %d", 
+				ESP_LOGE(TAG_SF, "Err remove file %s, error: %d", 
 						full_path, errno);
 				success = 0;
 			} else {
-				ESP_LOGI(TAG_SD, "Removed file: %s", full_path);
+				ESP_LOGI(TAG_SF, "Removed file: %s", full_path);
 			}
 		}
 	}
@@ -489,12 +489,12 @@ int sd_remove_dir_recursive(const char* path) {
 
 	// Now remove the (hopefully) empty directory
 	if (rmdir(path) != 0) {
-		ESP_LOGE(TAG_SD, "remove dir err %s, error: %d", 
+		ESP_LOGE(TAG_SF, "remove dir err %s, error: %d", 
 				path, errno);
 		return 0;
 	}
 
-	ESP_LOGI(TAG_SD, "Removed dir: %s", path);
+	ESP_LOGI(TAG_SF, "Removed dir: %s", path);
 	return success;
 }
 
@@ -505,7 +505,7 @@ int sd_ensure_dir(const char *path) {
 	}
 	// Not existing -> try to create
 	if (mkdir(path, 0775) != 0 && errno != EEXIST) {
-		ESP_LOGE_SD(TAG_SD, "mkdir(%s) failed: errno=%d", path, errno);
+		ESP_LOGE_SD(TAG_SF, "mkdir(%s) failed: errno=%d", path, errno);
 		return 0;
 	}
 	return 1;
@@ -514,24 +514,24 @@ int sd_ensure_dir(const char *path) {
 int sd_overwrite_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "wb");	 // "wb" for overwrite binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG_SD, "Err overwrite: %s", path);
+		ESP_LOGE_SD(TAG_SF, "Err overwrite: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG_SD, "overwritten: %s", path);
+	ESP_LOGI_SD(TAG_SF, "overwritten %s", path);
 	return 1;
 }
 
 int sd_append_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG_SD, "Err write: %s", path);
+		ESP_LOGE_SD(TAG_SF, "Err write: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG_SD, "written: %s", path);
+	ESP_LOGI_SD(TAG_SF, "written %s", path);
 	return 1;
 }
 
@@ -543,7 +543,7 @@ int sd_append_bin(const char *path, void *data, int data_len) {
 void sd_list_dirs(const char *base_path, int depth) {
 	DIR *dir;
 	if (!(dir = opendir(base_path))) {
-		ESP_LOGE(TAG_SD, "Could not open directory: %s", base_path);
+		ESP_LOGE(TAG_SF, "Could not open directory: %s", base_path);
 		return;
 	}
 
@@ -559,7 +559,7 @@ void sd_list_dirs(const char *base_path, int depth) {
 		
 		// Get file/directory information
 		if (stat(path, &file_stat) == -1) {
-			ESP_LOGW(TAG_SD, "Failed to stat %s", path);
+			ESP_LOGW(TAG_SF, "Failed to stat %s", path);
 			continue;
 		}
 		
@@ -570,13 +570,13 @@ void sd_list_dirs(const char *base_path, int depth) {
 		
 		if (S_ISDIR(file_stat.st_mode)) {
 			// It's a directory
-			ESP_LOGW(TAG_SD, "%s📁 %s/", indent, entry->d_name);
+			ESP_LOGW(TAG_SF, "%s📁 %s/", indent, entry->d_name);
 			
 			// Recursively list subdirectory
 			sd_list_dirs(path, depth + 1);
 		} else {
 			// It's a file
-			ESP_LOGW(TAG_SD, "%s📄 %s (Size: %ld bytes)", indent, entry->d_name, file_stat.st_size);
+			ESP_LOGW(TAG_SF, "%s📄 %s (Size: %ld bytes)", indent, entry->d_name, file_stat.st_size);
 		}
 	}
 

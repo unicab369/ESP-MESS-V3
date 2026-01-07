@@ -9,6 +9,7 @@
 #include "../components/analytics.h"
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
+// design: mutex on read and queue on write to SD card
 SemaphoreHandle_t FS_MUTEX = NULL;
 atomic_stats_t http_stats = {0};
 
@@ -321,7 +322,7 @@ esp_err_t send_http_file(httpd_req_t *req, const char *path) {
 	}
 
 	uint32_t time_dif = (esp_timer_get_time() - timestamp)/1000;
-	ESP_LOGW_SD(TAG_HTTP, "path %s: %dBytes %ldms", path, total_bytes, time_dif);
+	ESP_LOGW_SD(TAG_HTTP, "path %s: %dB %ldms", path, total_bytes, time_dif);
 
 	fclose(file);
 	FS_ACCESS_RELEASE();	//# FS RELEASE
@@ -359,9 +360,10 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	return send_http_file(req, full_path);
 }
 
-// STEP1: /log/<uuid>/2025/latest.bin - 1 hour of record every second (3600 records)
-// STEP2: /log/<uuid>/2025/1230.bin - 24 hours records every minute (1440 records - 60 per hour)
-// STEP3: /log/<uuid>/2025/12.bin - 30 days records every 10 minutes (4320 records - 144 per day)
+// /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A
+// /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B
+// /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1440 records - 60 per hour)
+// /log/<uuid>/2025/12.bin - 10 minutes records of 30 days (4320 records - 144 per day)
 
 // fs_access - internal
 esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
@@ -370,54 +372,58 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 	
 	char query[128];
 	char device_id[9] = {0};
-	char year[5] = {0};
-	char month[3] = {0};
-	char day[3] = {0};
-	char win[8] = {0};
-	int timeWindow = 0;
+	char year_str[5] = {0};
+	char month_str[3] = {0};
+	char day_str[3] = {0};
+	char window_str[8] = {0};
+	int window = 0, year = 0, month = 0, day = 0;
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
-		httpd_query_key_value(query, "yr", year, sizeof(year));
-		httpd_query_key_value(query, "mth", month, sizeof(month));
-		httpd_query_key_value(query, "day", day, sizeof(day));
-		httpd_query_key_value(query, "win", win, sizeof(win));
-		timeWindow = atoi(win);
+		httpd_query_key_value(query, "yr", year_str, sizeof(year_str));
+		httpd_query_key_value(query, "mth", month_str, sizeof(month_str));
+		httpd_query_key_value(query, "day", day_str, sizeof(day_str));
+		httpd_query_key_value(query, "win", window_str, sizeof(window_str));
+		window = atoi(window_str);
+		year = atoi(year_str);
+		month = atoi(month_str);
+		day = atoi(day_str);
 	}
 
+	ESP_LOGI_SD(TAG_HTTP, "Request dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
+							device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
-		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
-		return ESP_OK;
+		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
-	ESP_LOGW_SD(TAG_HTTP, "Request dev: %s, yr: %s, mth: %s, day: %s, window: %d", 
-		device_id, year, month, day, timeWindow);
 
 	// Check if device is valid
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
-	int found_and_validated = 0;
+	int found = 0;
 
 	for (int i=0; i < LOG_RECORD_COUNT; i++) {
 		if (RECORD_AGGREGATE[i].uuid == uuid && RECORD_AGGREGATE[i].last_log_rotation_sec > 0) {
-			found_and_validated = 1;
+			found = 1;
 			break;
 		}
 	}
 
-	if (!found_and_validated) {
+	if (!found) {
 		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing Data");
 		return ESP_OK;
 	}
 
 	// get the path
 	char path_str[64];
-	if (timeWindow > 59 && strlen(month) > 0 && strlen(day) > 0) {
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/%s%s.bin", device_id, year, month, day);
+	if (window > 59 && month > 0 && day > 0) {
+		// if window is greater than 59 minutes, get daily log
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%d%d.bin", device_id, year, month, day);
 	} else {
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%s/latest.bin", device_id, year);
+		// else get newest logs
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/latest.bin", device_id, year);
 	}
 
 	return send_http_file(req, path_str);
@@ -692,11 +698,11 @@ int make_tasks_watermarksStr(char *buffer) {
 	return ptr - buffer;
 }
 
-int get_littlefs_space(char *buffer) {
+int make_detailed_littlefsStr(char *buffer) {
 	size_t total_kb = 0, used_kb = 0;
 	esp_err_t ret = esp_littlefs_info(NULL, &total_kb, &used_kb);
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG_SD, "littlefs_info failed: %s", esp_err_to_name(ret));
+		ESP_LOGE(TAG_SF, "littlefs_info failed: %s", esp_err_to_name(ret));
 		return 0;
 	}
 

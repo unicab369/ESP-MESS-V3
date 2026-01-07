@@ -42,20 +42,20 @@ void SERV_RELOAD_LOGS() {
 	nvs_get_u8(NVS_HANDLER, "SD", &log_sd);
 	nvs_get_u8(NVS_HANDLER, "HTTP", &log_http);
 	nvs_get_u8(NVS_HANDLER, "APP", &log_app);
-		nvs_get_u8(NVS_HANDLER, "PART", &log_diag1);
-		nvs_get_u8(NVS_HANDLER, "SRAM", &log_diag2);
-		nvs_get_u8(NVS_HANDLER, "TASKS", &log_diag3);
-		nvs_get_u8(NVS_HANDLER, "SF", &log_sf);
+	nvs_get_u8(NVS_HANDLER, "PART", &log_diag1);
+	nvs_get_u8(NVS_HANDLER, "SRAM", &log_diag2);
+	nvs_get_u8(NVS_HANDLER, "TASKS", &log_diag3);
+	nvs_get_u8(NVS_HANDLER, "SF", &log_sf);
 	nvs_close(NVS_HANDLER);
 
 	ESP_LOGW(TAG, "Update Logs");
-	printf("SD:%d, HTTP:%d, APP:%d\nPART:%d, SRAM:%d, TASKS:%d, SF:%d\n",
+	printf("SD:%d, HTTP:%d, APP:%d, PART:%d, SRAM:%d, TASKS:%d, SF:%d\n",
 		log_sd, log_http, log_app,
 		log_diag1, log_diag2, log_diag3, log_sf
 	);
 
 	//# Set Logs level
-	esp_log_level_set(TAG_SD, log_sd);
+	esp_log_level_set(TAG_SF, log_sd);
 	esp_log_level_set(TAG_HTTP, log_http);
 	esp_log_level_set(TAG, log_app);
 	esp_log_level_set("#PART", log_diag1);
@@ -91,7 +91,7 @@ void log_diagnostics_handler() {
 		printf("%s", output);
 
 		memset(output, 0, sizeof(output));
-		get_littlefs_space(output);
+		make_detailed_littlefsStr(output);
 		printf("%s", output);
 	}
 
@@ -148,8 +148,10 @@ void app_main(void) {
 			}
 
 			if (!sd_ensure_dir(SD_POINT"/log")) {
-				ESP_LOGE(TAG_SD, "Err create /log");
+				ESP_LOGE(TAG_SF, "Err create /log");
 			}
+
+			sd_load_config();
 		}
 	}
 
@@ -187,10 +189,10 @@ void app_main(void) {
 					// $Take mutex
 					if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
 						// sd_bin_record_all(uuid, now, &timeinfo, &records);
-						rotate_timeLog_write(uuid, now, &timeinfo, &records);
+						rotationLog_write(uuid, now, &timeinfo, &records);
 						xSemaphoreGive(FS_MUTEX);  // $Release mutex
 					} else {
-						ESP_LOGW(TAG_SD, "SD card busy, skipping log write");
+						ESP_LOGW(TAG_SF, "SD card busy, skipping log write");
 					}
 				}
 			}

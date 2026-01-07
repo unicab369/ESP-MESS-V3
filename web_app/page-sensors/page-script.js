@@ -241,6 +241,7 @@ async function esp_reloadData(chart_id) {
 			const resp = await fetch(`http://${serverIp}/data?${params.toString()}`, {
 				method: 'GET'
 			})
+			console.log('%cesp_reloadData: %s', 'color: purple', resp.url)
 
 			if (!resp.ok) {
 				const errorText = await resp.text()

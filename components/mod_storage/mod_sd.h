@@ -38,16 +38,16 @@ static FILE *file;
 
 //# Write File
 esp_err_t sd_write(const char *path, char *buff) {
-	ESP_LOGI(TAG_SD, "Opening file %s", path);
+	ESP_LOGI(TAG_SF, "Opening file %s", path);
 
 	FILE *f = fopen(path, "w");
 	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for writing");
+		ESP_LOGE(TAG_SF, "Failed to open file for writing");
 		return ESP_FAIL;
 	}
 	fprintf(f, buff);
 	fclose(f);
-	ESP_LOGI(TAG_SD, "File written");
+	ESP_LOGI(TAG_SF, "File written");
 
 	return ESP_OK;
 }
@@ -70,9 +70,9 @@ void sd_test(void) {
 	}
 
 	//# Rename original file
-	ESP_LOGI(TAG_SD, "Renaming file %s to %s", file_hello, file_foo);
+	ESP_LOGI(TAG_SF, "Renaming file %s to %s", file_hello, file_foo);
 	if (rename(file_hello, file_foo) != 0) {
-		ESP_LOGE(TAG_SD, "Rename failed");
+		ESP_LOGE(TAG_SF, "Rename failed");
 		return;
 	}
 
@@ -93,7 +93,7 @@ void sd_test(void) {
 	// #if CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_INTERNAL_IO
 	//	 ret = sd_pwr_ctrl_del_on_chip_ldo(pwr_ctrl_handle);
 	//	 if (ret != ESP_OK) {
-	//		 ESP_LOGE(TAG_SD, "Failed to delete the on-chip LDO power control driver");
+	//		 ESP_LOGE(TAG_SF, "Failed to delete the on-chip LDO power control driver");
 	//		 return;
 	//	 }
 	// #endif
@@ -160,7 +160,16 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 // #define BUFFER_DURATION_SEC 1800  // 30 minutes
 #define BUFFER_DURATION_SEC 120  // 30 minutes
 
-static void rotate_timeLog_write(
+static void rotationLog_getFile(char device_id, int target, char *file_path) {
+	snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/new_%d.bin", 
+			device_id, target);
+}
+
+static void rotationLog_read(const char *device_id) {
+
+}
+
+static void rotationLog_write(
 	uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record
 ) {
 	char file_path[64];
@@ -176,31 +185,28 @@ static void rotate_timeLog_write(
 		//# 1. Create UUID directory: /log/<uuid>
 		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
+			ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>");
 			continue;
 		}
 
-		//# 2. Create year directory: /log/<uuid>/2025
-		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d", uuid, year);
-		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
-			continue;
-		}
-
-		//# 3. Create rotation file: /log/<uuid>/2025/new_#.bin
-		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/new_%d.bin", 
-				uuid, year, target->rotation);
-
-        if (target->last_log_rotation_sec == 0 || 
+		//# 2. Check rotation for latest_<0|1>.bin files
+		if (target->last_log_rotation_sec == 0 || 
 			time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
 		) {
-			target->rotation = (target->rotation == 0) ? 1 : 0;
-			target->last_log_rotation_sec = time_ref;
-
-			// Clear the new buffer file (start fresh)
+			// Time to rotate - switch and write to the OTHER file
+			int new_rotation = (target->rotation == 0) ? 1 : 0;
+			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/new_%d.bin", 
+					uuid, new_rotation);
 			sd_overwrite_bin(file_path, record, sizeof(record_t));
-		} else {
-			// Append to current buffer
+			
+			// Update rotation index to point to the new_rotation
+			target->rotation = new_rotation;
+			target->last_log_rotation_sec = time_ref;
+		}
+		else {
+			// Append to the current active file
+			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/new_%d.bin", 
+					uuid, target->rotation);
 			sd_append_bin(file_path, record, sizeof(record_t));
 		}
 
@@ -210,10 +216,17 @@ static void rotate_timeLog_write(
 		target->sum2 += record->value2;
 		target->sum3 += record->value3;
 
-		//# 4. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
+		//# 3. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
 		if (target->last_minute_update_sec == 0 || 
 			time_ref - target->last_minute_update_sec >= 60
 		) {
+			//#Create year directory: /log/<uuid>/2025
+			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d", uuid, year);
+			if (!sd_ensure_dir(file_path)) {
+				ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>/year");
+				continue;
+			}
+
 			snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
 				uuid, year, month, day
 			);
@@ -256,14 +269,14 @@ static void sd_bin_record_all(uint32_t uuid, uint32_t time_ref, struct tm *tm, r
 		//# /log/<uuid>
 		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>");
+			ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>");
 			continue;
 		}
 
 		//# /log/<uuid>/2025
 		snprintf(file_path, sizeof(file_path), SD_POINT"/log/%08lX/%d", uuid, year);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SD, "Err: create /<uuid>/year");
+			ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>/year");
 			continue;
 		}
 
@@ -328,7 +341,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Err write: %s", file_path);
+		ESP_LOGE_SD(TAG_SF, "Err write: %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -341,7 +354,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	}
 
 	fclose(f);
-	ESP_LOGW(TAG_SD, "written: %s", file_path);
+	ESP_LOGW(TAG_SF, "written %s", file_path);
 	return ESP_OK;
 }
 
@@ -349,7 +362,7 @@ static esp_err_t sd_load_config() {
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
-		ESP_LOGE_SD(TAG_SD, "Err read: %s", file_path);
+		ESP_LOGE_SD(TAG_SF, "Err read: %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -378,7 +391,7 @@ static esp_err_t sd_load_config() {
 	}
 
 	fclose(f);
-	ESP_LOGI(TAG_SD, "Loaded %d configs", loaded);
+	ESP_LOGI(TAG_SF, "Loaded %d configs", loaded);
 	return ESP_OK;
 }
 
@@ -408,7 +421,7 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
 	
-	ESP_LOGW(TAG_SD, "configs count: %d\n", count);
+	ESP_LOGW(TAG_SF, "configs count: %d\n", count);
 	*ptr++ = ']';
 	*ptr = '\0';
 	return ptr - buffer; // Return length
@@ -435,7 +448,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
 	
-	ESP_LOGW(TAG_SD, "caches count: %d\n", count);
+	ESP_LOGW(TAG_SF, "caches count: %d\n", count);
 	*ptr++ = ']';
 	*ptr = '\0';
 	return ptr - buffer; // Return length
@@ -448,7 +461,7 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size
 
 	FILE *f = fopen(file_path, "rb");
 	if (f == NULL) {
-		ESP_LOGE(TAG_SD, "Failed to open file for reading: %s", file_path);
+		ESP_LOGE(TAG_SF, "Failed to open file for reading: %s", file_path);
 		return false;
 	}
 
@@ -466,10 +479,10 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size
 	fclose(f);
 
 	if (records_read != record_count) {
-		ESP_LOGW(TAG_SD, "Partial read: %d of %d records", records_read, record_count);
+		ESP_LOGW(TAG_SF, "Partial read: %d of %d records", records_read, record_count);
 	}
 
-	ESP_LOGI(TAG_SD, "Read %d records from %s", records_read, file_path);
+	ESP_LOGI(TAG_SF, "Read %d records from %s", records_read, file_path);
 
 	return records_read;
 }
