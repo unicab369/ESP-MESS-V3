@@ -37,18 +37,21 @@ void SERV_RELOAD_LOGS() {
 
 	uint8_t log_sd = 0, log_http = 0, log_app = 0;
 	uint8_t log_diag1 = 0, log_diag2 = 0, log_diag3 = 0;
+	uint8_t log_sf = 0;
 
 	nvs_get_u8(NVS_HANDLER, "SD", &log_sd);
 	nvs_get_u8(NVS_HANDLER, "HTTP", &log_http);
 	nvs_get_u8(NVS_HANDLER, "APP", &log_app);
-	nvs_get_u8(NVS_HANDLER, "DIAG1", &log_diag1);
-	nvs_get_u8(NVS_HANDLER, "DIAG2", &log_diag2);
-	nvs_get_u8(NVS_HANDLER, "DIAG3", &log_diag3);
+		nvs_get_u8(NVS_HANDLER, "DIAG1", &log_diag1);
+		nvs_get_u8(NVS_HANDLER, "DIAG2", &log_diag2);
+		nvs_get_u8(NVS_HANDLER, "DIAG3", &log_diag3);
+		nvs_get_u8(NVS_HANDLER, "SF", &log_sf);
 	nvs_close(NVS_HANDLER);
 
-	ESP_LOGW(TAG, "Update Logs \nSD:%d, HTTP:%d, APP:%d \nDIAG1:%d, DIAG2:%d, DIAG3:%d",
+	ESP_LOGW(TAG, "Update Logs");
+	printf("SD:%d, HTTP:%d, APP:%d\nDIAG1:%d, DIAG2:%d, DIAG3:%d, SF:%d\n",
 		log_sd, log_http, log_app,
-		log_diag1, log_diag2, log_diag3
+		log_diag1, log_diag2, log_diag3, log_sf
 	);
 
 	//# Set Logs level
@@ -58,6 +61,7 @@ void SERV_RELOAD_LOGS() {
 	esp_log_level_set("#DIAG1", log_diag1);
 	esp_log_level_set("#DIAG2", log_diag2);
 	esp_log_level_set("#DIAG3", log_diag3);
+	esp_log_level_set("#SF", log_sf);
 }
 
 void filtered_log_handler() {
@@ -70,12 +74,24 @@ void filtered_log_handler() {
 	}
 	if (esp_log_level_get("#DIAG2") > 1) {
 		ESP_LOGW("#DIAG2", "SRAM Breakdown");
+		memset(output, 0, sizeof(output));
 		make_detailed_sramStr(output);
 		printf("%s", output);
 	}
 	if (esp_log_level_get("#DIAG3") > 1) {
 		ESP_LOGW("#DIAG3", "Task Watermarks");
+		memset(output, 0, sizeof(output));
 		make_tasks_watermarksStr(output);
+		printf("%s", output);
+	}
+	if (esp_log_level_get("#SF") > 1) {
+		ESP_LOGW("#SF", "Storage Diagnostics");
+		memset(output, 0, sizeof(output));
+		sd_card_info(output);
+		printf("%s", output);
+
+		memset(output, 0, sizeof(output));
+		get_littlefs_space(output);
 		printf("%s", output);
 	}
 
@@ -176,6 +192,14 @@ void app_main(void) {
 		wifi_poll();
 
 		filtered_log_handler();
+
+		// char output[128];
+		// get_littlefs_space(output);
+		// printf("%s", output);
+
+		// memset(output, 0, sizeof(output));
+		// sd_card_info(output);
+		// printf("%s", output);
 
 		vTaskDelay(1000/portTICK_PERIOD_MS);
 	}

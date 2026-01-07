@@ -155,6 +155,46 @@ void sd_mmc_config(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8
 }
 
 
+//###################################################
+//# CARD METHODS
+//###################################################
+
+int sd_card_info(char *buffer) {
+	if (!card) {
+		ESP_LOGE(TAG_SD, "No SD card initialized");
+		return 0;
+	}
+
+	char *ptr = buffer; 
+	int MEGABYTE = 1024 * 1024;
+	char card_name[16];
+	uint64_t physical_capacity = (uint64_t)card->csd.capacity * card->csd.sector_size;
+	memcpy(card_name, card->cid.name, sizeof(card_name));
+	int written = sprintf(ptr, "SD Name: %s, %lldMB %ldMHz\n",
+		card_name, physical_capacity / MEGABYTE, card->max_freq_khz / 1000);
+	ptr += written;
+	
+	// 2. Filesystem info (from FATFS)
+	FATFS* fs;
+	DWORD free_clusters;
+	FRESULT res = f_getfree("0:/", &free_clusters, &fs);
+	
+	if (res != FR_OK) {
+		ESP_LOGE(TAG_SD, "Err: f_getfree %d", res);
+		return ptr - buffer;
+	}
+
+	uint64_t fs_total = (uint64_t)(fs->n_fatent - 2) * fs->csize * 512;
+	uint64_t fs_free = (uint64_t)free_clusters * fs->csize * 512;
+	uint64_t fs_used = fs_total - fs_free;
+	
+	written = sprintf(ptr, "FAT %lldM = %lldM (%lld%% Used) + %lldM (Free)\n", 
+			fs_total / MEGABYTE, fs_used*100/fs_total, fs_used / MEGABYTE, fs_free / MEGABYTE);
+	ptr += written;
+	*ptr = '\0';
+	return ptr - buffer;
+}
+
 //# Format Card
 void storage_sd_format_card() {
 	esp_err_t ret = esp_vfs_fat_sdcard_format(SD_POINT, card);

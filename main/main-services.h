@@ -294,7 +294,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 			nvs_erase_key(NVS_HANDLER, old_key);
 		}
 
-		// then set/update
+		//# then Set/Update
 		switch (type) {
 			case 1: nvs_set_u8(NVS_HANDLER, new_key, (uint8_t)value); break;
 			case 2: nvs_set_u16(NVS_HANDLER, new_key, (uint16_t)value); break;
@@ -304,7 +304,12 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 			case 18: nvs_set_i16(NVS_HANDLER, new_key, (int16_t)value); break;
 			case 20: nvs_set_i32(NVS_HANDLER, new_key, (int32_t)value); break;
 			case 24: nvs_set_i64(NVS_HANDLER, new_key, (int64_t)value); break;
-			case 33: nvs_set_str(NVS_HANDLER, new_key, val_str); break;
+			case 33: {
+				//! Decode URL encoded string
+				url_decode_inplace(val_str);
+				nvs_set_str(NVS_HANDLER, new_key, val_str);
+				break;
+			}
 			default: break;
 		}
 		nvs_commit(NVS_HANDLER);
@@ -375,7 +380,13 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 			case 33: {
 				len = sizeof(val_str);
 				nvs_get_str(NVS_HANDLER, new_key, val_str, &len);
-				len = snprintf(output, sizeof(output), "{\"val\":\"%s\",\"typ\":33}", val_str);
+
+				if (memcmp(new_key, "CRED", 4) == 0) {
+					len = snprintf(output, sizeof(output), "{\"val\":\"\",\"typ\":33}");
+				} else {
+					len = snprintf(output, sizeof(output), "{\"val\":\"%s\",\"typ\":33}", val_str);
+				}
+
 				ret = httpd_resp_send(req, output, len);
 				break;
 			}
@@ -611,10 +622,10 @@ int make_detailed_sramStr(char *buffer) {
 
 	char *ptr = buffer;  // Pointer to current position
 
-	int written = sprintf(ptr, "SRAM %dK = %dK(%d%% used) + %dK(%d%% free)\n",
+	int written = sprintf(ptr, "SRAM %dK = %dK (%d%% Used) + %dK (%d%% Free)\n",
 			total_sram_kb, used_sram_kb, used_percent, free_sram_kb, free_percent);
 	ptr += written;
-	written = sprintf(ptr, "Blocks: %d used + %d free\n",
+	written = sprintf(ptr, "Blocks: %d Used + %d Free\n",
 			heap_info.allocated_blocks, heap_info.free_blocks);
 	ptr += written;
 	
@@ -629,10 +640,10 @@ int make_detailed_sramStr(char *buffer) {
 }
 
 int make_tasks_watermarksStr(char *buffer) {
-    static TaskStatus_t tasks[MAX_PRINTING_TASKS];  // No malloc/free!
-    UBaseType_t task_count = uxTaskGetNumberOfTasks();
-    if (task_count > MAX_PRINTING_TASKS) task_count = MAX_PRINTING_TASKS;
-    task_count = uxTaskGetSystemState(tasks, task_count, NULL);
+	static TaskStatus_t tasks[MAX_PRINTING_TASKS];  // No malloc/free!
+	UBaseType_t task_count = uxTaskGetNumberOfTasks();
+	if (task_count > MAX_PRINTING_TASKS) task_count = MAX_PRINTING_TASKS;
+	task_count = uxTaskGetSystemState(tasks, task_count, NULL);
 	char *ptr = buffer;  // Pointer to current position
 
 	for (int i = 0; i < task_count; i++) {
@@ -643,3 +654,24 @@ int make_tasks_watermarksStr(char *buffer) {
 	*ptr = '\0';  // Null-terminate
 	return ptr - buffer;
 }
+
+int get_littlefs_space(char *buffer) {
+	size_t total_kb = 0, used_kb = 0;
+	esp_err_t ret = esp_littlefs_info(NULL, &total_kb, &used_kb);
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG_SD, "littlefs_info failed: %s", esp_err_to_name(ret));
+		return 0;
+	}
+
+	total_kb = total_kb / 1024;
+	used_kb = used_kb / 1024;
+	size_t free = total_kb - used_kb;
+
+	char *ptr = buffer;  // Pointer to current position
+	int written = sprintf(ptr, "LittleFS %dK = %dK (%d%% Used) + %dK (Free)\n",
+								total_kb, used_kb, used_kb*100 / total_kb, free);
+	ptr += written;
+	*ptr = '\0';  // Null-terminate
+	return ptr - buffer;
+}
+

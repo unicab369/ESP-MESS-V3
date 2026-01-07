@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="page-style.css">
+	<title>ESP32 System Analytics</title>
+</head>
+<body>
+	<div class="container">
+		<header style="text-align: center; margin-bottom: 30px; color: white;">
+			<h1>ESP32 System Analytics</h1>
+			<p style="font-size: 20px;">
+				<span class="status-indicator status-online"></span>
+				Connected to ESP32
+				<span id="ip-address">192.168.1.100</span>
+				<a href="../page-file-explorer/file-explorer.html">
+					<button class="btn">Files</button>
+				</a>
+			</p>
+		</header>
+		
+		<div class="dashboard">
+			<!-- Memory Card -->
+			<div class="card">
+				<h2>💾 Memory Usage</h2>
+
+				<div style="margin: 15px 0;">
+					<div class="progress-label">
+						<span>Heap Memory</span><span id="heap-used">45%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="heap-bar" style="width: 45%"></div>
+					</div>
+				</div>
+				
+				<div style="margin: 15px 0;">
+					<div class="progress-label">
+						<span>Stack Usage</span><span id="stack-used">22%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="stack-bar" style="width: 22%"></div>
+					</div>
+				</div>
+				
+				<div class="stats-grid">
+					<div class="stat-item">
+						<div class="stat-value" id="free-heap">124.5</div>
+						<div class="stat-label">Free Heap (KB)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="largest-block">56.2</div>
+						<div class="stat-label">Largest Block (KB)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="free-blocks">24</div>
+						<div class="stat-label">Free Blocks</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="alloc-blocks">89</div>
+						<div class="stat-label">Allocated Blocks</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Storage Card -->
+			<div class="card">
+				<h2>💽 Storage</h2>
+
+				<div style="margin: 15px 0;">
+					<div class="progress-label">
+						<span>Flash Usage</span><span id="flash-used">65%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill warning" id="flash-bar" style="width: 65%"></div>
+					</div>
+				</div>
+				
+				<div style="margin: 15px 0;">
+					<div class="progress-label">
+						<span>SD Card</span><span id="sd-used">32%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="sd-bar" style="width: 32%"></div>
+					</div>
+				</div>
+				
+				<div class="stats-grid">
+					<div class="stat-item">
+						<div class="stat-value" id="flash-total">4.0</div>
+						<div class="stat-label">Total Flash (MB)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="flash-free">1.4</div>
+						<div class="stat-label">Free Flash (MB)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="sd-total">32.0</div>
+						<div class="stat-label">SD Card (GB)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="sd-free">21.8</div>
+						<div class="stat-label">Free SD (GB)</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Tasks Card -->
+			<div class="card">
+				<h2>⚙️ Task Manager</h2>
+
+				<div style="margin: 15px 0;">
+					<div class="progress-label">
+						<span>CPU Usage</span><span id="cpu-used">18%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="cpu-bar" style="width: 18%"></div>
+					</div>
+				</div>
+				
+				<div class="stats-grid">
+					<div class="stat-item">
+						<div class="stat-value" id="task-count">12</div>
+						<div class="stat-label">Total Tasks</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="running-tasks">3</div>
+						<div class="stat-label">Running</div>
+					</div>
+				</div>
+				
+				<div style="margin-top: 15px;">
+					<div class="progress-label">
+						<span>Active Tasks</span>
+					</div>
+					<div id="task-list" style="font-size: 0.9em; margin-top: 10px;">
+						<div>• http_server (Core 0) - 8.2KB stack</div>
+						<div>• wifi_task (Core 1) - 4.1KB stack</div>
+						<div>• main (Core 0) - 3.5KB stack</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Network Card -->
+			<div class="card">
+				<h2>📡 Network</h2>
+
+				<div class="stats-grid">
+					<div class="stat-item">
+						<div class="stat-value" id="wifi-rssi">-65</div>
+						<div class="stat-label">WiFi RSSI (dBm)</div>
+					</div>
+					<div class="stat-item">
+						<div class="stat-value" id="connected-clients">3</div>
+						<div class="stat-label">Connected Clients</div>
+					</div>
+				</div>
+				
+				<div style="margin-top: 15px;">
+					<div class="progress-label">
+						<span>HTTP Requests (last minute)</span><span id="request-count">42</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="request-bar" style="width: 70%"></div>
+					</div>
+				</div>
+				
+				<div style="margin-top: 15px;">
+					<div class="progress-label">
+						<span>Data Transferred</span><span id="data-transferred">15.2 MB</span>
+					</div>
+				</div>
+			</div>
+			
+			<!-- System Log Card -->
+			<div class="card">
+				<h2>📝 System Log</h2>
+
+				<div class="log-container" id="log-container">
+					<div class="log-entry">
+						<span class="log-time">14:23:01</span>
+						<span class="log-info">HTTP: Served file /index.html (2.4KB)</span>
+					</div>
+					<div class="log-entry">
+						<span class="log-time">14:22:58</span>
+						<span class="log-info">SD: Read complete (8192 bytes)</span>
+					</div>
+					<div class="log-entry">
+						<span class="log-time">14:22:45</span>
+						<span class="log-warning">MEM: Fragmentation at 35%</span>
+					</div>
+					<div class="log-entry">
+						<span class="log-time">14:22:30</span>
+						<span class="log-info">Client connected: 192.168.1.101</span>
+					</div>
+					<div class="log-entry">
+						<span class="log-time">14:22:15</span>
+						<span class="log-info">WiFi: Signal strength -65dBm</span>
+					</div>
+				</div>
+				
+				<div class="controls" style="display:flex; flex-direction: row;">
+					<button class="btn btn-primary" onclick="refreshData()" style="flex:1;">
+						<span>🔄</span> Refresh
+					</button>
+					<button class="btn btn-secondary" onclick="clearLogs()" style="flex:1;">
+						<span>🗑️</span> Clear
+					</button>
+				</div>
+			</div>
+		</div>
+		
+		<div style="text-align: center; color: white;">
+			Auto-refresh every 10 seconds | Last update: <span id="last-update">14:23:05</span>
+		</div>
+	</div>
+
+	<script>
+		// Current ESP32 IP (you can make this dynamic)
+		let esp32Ip = '192.168.1.100';
+		
+		// Update time display
+		function updateTime() {
+			const now = new Date();
+			const timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+			document.getElementById('last-update').textContent = timeStr;
+			return timeStr;
+		}
+		
+		// Fetch data from ESP32
+		async function fetchESP32Data() {
+			try {
+				// These would be your actual API endpoints on ESP32
+				const endpoints = {
+					memory: `http://${esp32Ip}/api/memory`,
+					storage: `http://${esp32Ip}/api/storage`,
+					tasks: `http://${esp32Ip}/api/tasks`,
+					network: `http://${esp32Ip}/api/network`,
+					logs: `http://${esp32Ip}/api/logs`
+				};
+				
+				// In a real implementation, you would fetch from these endpoints
+				// For now, we'll simulate data
+				simulateData();
+				
+				// Update timestamp
+				updateTime();
+				
+			} catch (error) {
+				console.error('Error fetching data:', error);
+				addLogEntry('Error connecting to ESP32', 'error');
+			}
+		}
+		
+		// Simulate data (replace with actual API calls)
+		function simulateData() {
+			// Memory data
+			const freeHeap = 120 + Math.random() * 30;
+			const usedHeap = 100 - (freeHeap / 250 * 100);
+			const largestBlock = freeHeap * 0.45;
+			
+			document.getElementById('free-heap').textContent = freeHeap.toFixed(1);
+			document.getElementById('heap-used').textContent = usedHeap.toFixed(1) + '%';
+			document.getElementById('heap-bar').style.width = usedHeap + '%';
+			document.getElementById('largest-block').textContent = largestBlock.toFixed(1);
+			document.getElementById('free-blocks').textContent = Math.floor(20 + Math.random() * 10);
+			document.getElementById('alloc-blocks').textContent = Math.floor(80 + Math.random() * 20);
+			
+			// Stack usage
+			const stackUsed = 20 + Math.random() * 10;
+			document.getElementById('stack-used').textContent = stackUsed.toFixed(1) + '%';
+			document.getElementById('stack-bar').style.width = stackUsed + '%';
+			
+			// Storage data
+			const flashUsed = 60 + Math.random() * 10;
+			const sdUsed = 30 + Math.random() * 10;
+			
+			document.getElementById('flash-used').textContent = flashUsed.toFixed(1) + '%';
+			document.getElementById('flash-bar').style.width = flashUsed + '%';
+			document.getElementById('sd-used').textContent = sdUsed.toFixed(1) + '%';
+			document.getElementById('sd-bar').style.width = sdUsed + '%';
+			
+			// Task data
+			const cpuUsed = 15 + Math.random() * 10;
+			document.getElementById('cpu-used').textContent = cpuUsed.toFixed(1) + '%';
+			document.getElementById('cpu-bar').style.width = cpuUsed + '%';
+			
+			// Network data
+			const rssi = -65 - Math.random() * 10;
+			const clients = 2 + Math.floor(Math.random() * 3);
+			const requests = 40 + Math.floor(Math.random() * 20);
+			
+			document.getElementById('wifi-rssi').textContent = Math.floor(rssi);
+			document.getElementById('connected-clients').textContent = clients;
+			document.getElementById('request-count').textContent = requests;
+			document.getElementById('request-bar').style.width = (requests / 60 * 100) + '%';
+			
+			// Add a random log entry
+			const logTypes = [
+				['HTTP: Served file', 'info'],
+				['SD: Read operation', 'info'],
+				['Client connected', 'info'],
+				['Memory fragmentation', 'warning'],
+				['WiFi signal update', 'info']
+			];
+			
+			const [logMsg, logType] = logTypes[Math.floor(Math.random() * logTypes.length)];
+			addLogEntry(logMsg, logType);
+		}
+		
+		// Add log entry
+		function addLogEntry(message, type = 'info') {
+			const container = document.getElementById('log-container');
+			const entry = document.createElement('div');
+			entry.className = 'log-entry';
+			
+			const time = updateTime();
+			const typeClass = `log-${type}`;
+			
+			entry.innerHTML = `
+				<span class="log-time">${time}</span>
+				<span class="${typeClass}">${message}</span>
+			`;
+			
+			container.insertBefore(entry, container.firstChild);
+			
+			// Limit log entries
+			if (container.children.length > 10) {
+				container.removeChild(container.lastChild);
+			}
+		}
+		
+		// Clear logs
+		function clearLogs() {
+			document.getElementById('log-container').innerHTML = '';
+			addLogEntry('Logs cleared', 'info');
+		}
+		
+		// Refresh data
+		function refreshData() {
+			fetchESP32Data();
+			addLogEntry('Manual refresh requested', 'info');
+		}
+		
+		// Auto-refresh every 10 seconds
+		setInterval(fetchESP32Data, 10000);
+		
+		// Initialize
+		document.addEventListener('DOMContentLoaded', () => {
+			fetchESP32Data();
+			updateTime();
+			
+			// Update IP display if you have dynamic IP
+			document.getElementById('ip-address').textContent = esp32Ip;
+		});
+		
+		// Add keyboard shortcuts
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'r' || e.key === 'R') {
+				if (e.ctrlKey) refreshData()
+			}
+			if (e.key === 'Escape') clearLogs();
+		});
+	</script>
+</body>
+</html>

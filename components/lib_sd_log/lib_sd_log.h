@@ -23,6 +23,7 @@ size_t sd_write_str(const char *path, const char *str);
 
 esp_err_t sd_remove_file(const char *path);
 esp_err_t sd_rename(const char *old_path, const char *new_path);
+int sd_card_info(char *buffer);
 
 typedef struct {
 	FILE *file;
