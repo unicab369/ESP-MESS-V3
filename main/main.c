@@ -188,7 +188,6 @@ void app_main(void) {
 
 					// $Take mutex
 					if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
-						// sd_bin_record_all(uuid, now, &timeinfo, &records);
 						rotationLog_write(uuid, now, &timeinfo, &records);
 						xSemaphoreGive(FS_MUTEX);  // $Release mutex
 					} else {
