@@ -8,6 +8,8 @@
 
 #include "../components/analytics.h"
 
+#define HTTP_CHUNK_SIZE 1024
+
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
 // design: mutex on read and queue on write to SD card
 SemaphoreHandle_t FS_MUTEX = NULL;
@@ -32,7 +34,7 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "application/json");
 	
-	char response[2048];
+	char response[1024];
 	char *ptr = response;
 	size_t remaining = sizeof(response);
 	
@@ -294,7 +296,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access
-esp_err_t send_http_file(httpd_req_t *req, const char *path) {
+esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path, int send_end_trunk) {
 	if (!FS_ACCESS_START(req)) return ESP_OK;
 
 	FILE* file = fopen(path, "rb");
@@ -305,12 +307,11 @@ esp_err_t send_http_file(httpd_req_t *req, const char *path) {
 	}
 
 	// Stream file content in chunks
-	char buffer[1024];
 	size_t bytes_read;
 	size_t total_bytes = 0;
 	uint32_t timestamp = esp_timer_get_time();
 
-	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {		
+	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {		
 		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
 		if (err != ESP_OK) {
 			ESP_LOGE(TAG_HTTP, "Err sending chunk: %d", err);
@@ -326,7 +327,11 @@ esp_err_t send_http_file(httpd_req_t *req, const char *path) {
 
 	fclose(file);
 	FS_ACCESS_RELEASE();	//# FS RELEASE
-	return httpd_resp_send_chunk(req, NULL, 0);
+
+	if (send_end_trunk) {
+		return httpd_resp_send_chunk(req, NULL, 0);
+	}
+	return ESP_OK;
 }
 
 // fs_access -internal
@@ -356,8 +361,9 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	int size = atoi(size_str);
 
 	char full_path[64];
+	char buffer[1024];
 	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
-	return send_http_file(req, full_path);
+	return send_http_file(req, buffer, full_path, 1);
 }
 
 // /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A
@@ -393,7 +399,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		day = atoi(day_str);
 	}
 
-	ESP_LOGI_SD(TAG_HTTP, "Request dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
+	ESP_LOGI(TAG_HTTP, "HTTP_DATA_HANDLER dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
 							device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -418,15 +424,99 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 
 	// get the path
 	char path_str[64];
+	char buffer[1024];
+
 	if (window > 59 && month > 0 && day > 0) {
 		// if window is greater than 59 minutes, get daily log
 		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%d%d.bin", device_id, year, month, day);
-	} else {
+		return send_http_file(req, buffer, path_str, 1);
+	}
+	else {
 		// else get newest logs
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/latest.bin", device_id, year);
+		rotationLog_getFile(uuid, 1, path_str);			// get new_1.bin
+		send_http_file(req, buffer, path_str, 0);
+		rotationLog_getFile(uuid, 0, path_str);			// get new_0.bin
+		return send_http_file(req, buffer, path_str, 1);
+	}
+}
+
+// fs_access -internal
+esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char path[64] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "path", path, sizeof(path));
 	}
 
-	return send_http_file(req, path_str);
+	for (char *p = path; *p; p++) if (*p == '*') *p = '/';
+	ESP_LOGW(TAG_HTTP, "path %s", path);
+
+	char buffer[1024];
+	return send_http_file(req, buffer, path, 1);
+}
+
+// fs_access
+esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char new_path[64] = {0};
+	char old_path[64] = {0};
+	char text_str[1024] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "new", new_path, sizeof(new_path));
+		httpd_query_key_value(query, "old", old_path, sizeof(old_path));
+		httpd_query_key_value(query, "txt", text_str, sizeof(text_str));
+	}
+
+	// replace '*' with '/'
+	for (char *p = new_path; *p; p++) if (*p == '*') *p = '/';
+	for (char *p = old_path; *p; p++) if (*p == '*') *p = '/';
+
+	esp_err_t ret;
+	int new_name_len = strlen(new_path);
+	int old_name_len = strlen(old_path);
+
+	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
+	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
+	if (!FS_ACCESS_START(req)) return ESP_OK;
+
+	// no old_name => Create
+	if (!old_name_len) {
+		ESP_LOGW(TAG_HTTP, "create: %s", new_path);
+		url_decode_newline(text_str);
+		sd_write_str(new_path, text_str);
+	}
+	// no new_name => Delete
+	else if (!new_name_len) {
+		ESP_LOGW(TAG_HTTP, "remove: %s", old_path);
+		sd_remove_file(old_path);
+	}
+	// otherwise => Rename
+	else if (new_name_len && old_name_len) {
+		ESP_LOGW(TAG_HTTP, "rename: %s -> %s", old_path, new_path);
+		
+		ret = sd_rename(old_path, new_path);
+		if (ret == ESP_OK) {
+			url_decode_newline(text_str);
+			sd_write_str(new_path, text_str);
+		}
+	}
+
+	FS_ACCESS_RELEASE();		//# FS RELEASE
+	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
 // fs_access
@@ -542,83 +632,6 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 
 	FS_ACCESS_RELEASE();	//# FS RELEASE
 	return httpd_resp_send(req, output, len);
-}
-
-// fs_access -internal
-esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-	httpd_resp_set_type(req, "text/plain");
-
-	char query[128];
-	char path[64] = {0};
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "path", path, sizeof(path));
-	}
-
-	for (char *p = path; *p; p++) if (*p == '*') *p = '/';
-	ESP_LOGW(TAG_HTTP, "path %s", path);
-	return send_http_file(req, path);
-}
-
-// fs_access
-esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-	httpd_resp_set_type(req, "text/plain");
-
-	char query[128];
-	char new_path[64] = {0};
-	char old_path[64] = {0};
-	char text_str[1024] = {0};
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "new", new_path, sizeof(new_path));
-		httpd_query_key_value(query, "old", old_path, sizeof(old_path));
-		httpd_query_key_value(query, "txt", text_str, sizeof(text_str));
-	}
-
-	// replace '*' with '/'
-	for (char *p = new_path; *p; p++) if (*p == '*') *p = '/';
-	for (char *p = old_path; *p; p++) if (*p == '*') *p = '/';
-
-	esp_err_t ret;
-	int new_name_len = strlen(new_path);
-	int old_name_len = strlen(old_path);
-
-	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
-	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
-	if (!FS_ACCESS_START(req)) return ESP_OK;
-
-	// no old_name => Create
-	if (!old_name_len) {
-		ESP_LOGW(TAG_HTTP, "create: %s", new_path);
-		url_decode_newline(text_str);
-		sd_write_str(new_path, text_str);
-	}
-	// no new_name => Delete
-	else if (!new_name_len) {
-		ESP_LOGW(TAG_HTTP, "remove: %s", old_path);
-		sd_remove_file(old_path);
-	}
-	// otherwise => Rename
-	else if (new_name_len && old_name_len) {
-		ESP_LOGW(TAG_HTTP, "rename: %s -> %s", old_path, new_path);
-		
-		ret = sd_rename(old_path, new_path);
-		if (ret == ESP_OK) {
-			url_decode_newline(text_str);
-			sd_write_str(new_path, text_str);
-		}
-	}
-
-	FS_ACCESS_RELEASE();		//# FS RELEASE
-	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
 //###################################################

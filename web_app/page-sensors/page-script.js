@@ -242,6 +242,7 @@ async function esp_reloadData(chart_id) {
 				method: 'GET'
 			})
 			console.log('%cesp_reloadData: %s', 'color: purple', resp.url)
+			const time_dif_ms = Date.now() - startTime
 
 			if (!resp.ok) {
 				const errorText = await resp.text()
@@ -255,22 +256,32 @@ async function esp_reloadData(chart_id) {
 			const RECORD_SIZE = 10
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
-			console.log('Response time:', Date.now() - startTime, 'ms')
 
-			const timeStampArr = new Array(recordCount)
-			const tempArr = new Array(recordCount)
-			const humArr = new Array(recordCount)
-			const luxArr = new Array(recordCount)
-
-			// Pre-allocate arrays
+			// Parse into combined array directly
+			const records = [];
 			for (let i = 0; i < recordCount; i++) {
-				timeStampArr[i] = dataView.getUint32(i * RECORD_SIZE, true)
-				tempArr[i] = dataView.getUint16(i * RECORD_SIZE + 4, true)
-				humArr[i] = dataView.getInt16(i * RECORD_SIZE + 6, true)
-				luxArr[i] = dataView.getUint16(i * RECORD_SIZE + 8, true)
+				records.push({
+					time: dataView.getUint32(i * RECORD_SIZE, true),
+					temp: dataView.getUint16(i * RECORD_SIZE + 4, true),
+					hum: dataView.getInt16(i * RECORD_SIZE + 6, true),
+					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
+				})
+				// console.log(`Record ${i}: Time=${new Date(timeStampArr[i]*1000).toLocaleString()}, Temp=${tempArr[i]/10}`)
 			}
 
-			console.log('count:', recordCount)
+			//# Sort by time - uPlot requires ascending order
+			records.sort((a, b) => a.time - b.time);
+
+			// Extract arrays
+			const timeStampArr = records.map(r => r.time);
+			const tempArr = records.map(r => r.temp);
+			const humArr = records.map(r => r.hum);
+			const luxArr = records.map(r => r.lux);
+
+			console.log(
+				`%cCount: ${recordCount} records,%c Resp time: ${time_dif_ms} ms`,
+				'color: green', 'color: blue'
+			)
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
 			set_timeWindow(chart_id)
 
