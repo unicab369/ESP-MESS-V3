@@ -158,7 +158,7 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 // 4. /log/<uuid>/2025/12.bin → Monthly aggregate (1/10min = 4320 records OR 144 per day)
 
 // #define BUFFER_DURATION_SEC 1800  // 30 minutes
-#define BUFFER_DURATION_SEC 120  // 30 minutes
+#define BUFFER_DURATION_SEC 10*60  // 10 minutes
 #define ROTATION_LOG_PATH_LEN 64
 
 static void rotationLog_getFile(uint32_t device_id, int target, char *file_path) {

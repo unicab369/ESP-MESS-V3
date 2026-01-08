@@ -426,7 +426,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	char path_str[64];
 	char buffer[1024];
 
-	if (window > 59 && month > 0 && day > 0) {
+	if (window > 60 && month > 0 && day > 0) {
 		// if window is greater than 59 minutes, get daily log
 		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%02d%02d.bin", device_id, year, month, day);
 		return send_http_file(req, buffer, path_str, 1);

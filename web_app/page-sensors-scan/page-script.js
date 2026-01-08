@@ -101,7 +101,7 @@ function showOptions(index) {
 				if (target.config > 0) return
 				console.log("update config: %s %d", target.uuid, 1000000102)
 
-				// save default config 5 minutes time window, 2 seconds update window
+				// save default config 5 minutes time window, 2 seconds update interval
 				service_saveConfig(target.uuid, 1000000102, ()=>{
 					startScan()
 				})

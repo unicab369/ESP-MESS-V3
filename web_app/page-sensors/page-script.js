@@ -1,17 +1,6 @@
 let indexDB = null;
 let chartObjs = {};
 
-// let chartObjs = {
-// 	'aabbccdd': {
-// 		plot: null,
-// 		scheduler: null,
-// 		config: {
-// 			time_window_idx: 0,
-// 			update_window_idx: 1
-// 		}
-// 	},
-// };
-
 let appConfig = {
 	'time_window_default_idx': 1,
 	'time_window_mins': [1, 5, 20, 60, 300, 720, 1440, 4320, 10080, 43200, 129600, 259200, 0],
@@ -27,8 +16,8 @@ function get_timeWindow(chart_id) {
 	return document.getElementById(`timeWindow-${ chart_id }`);
 }
 
-function get_updateWindow(chart_id) {
-	return document.getElementById(`updateWindow-${ chart_id }`);
+function get_updateInterval(chart_id) {
+	return document.getElementById(`updateInterval-${ chart_id }`);
 }
 
 function make_options(default_idx, option_strs, option_values) {
@@ -45,7 +34,7 @@ function make_options(default_idx, option_strs, option_values) {
 }
 
 //! Initialize charts
-// Response format: [["AABBCCDD", uint32_t], ["11223344", uint32_t], ...]
+// Response format: [["AABBCCDD", uint32_t], ["AABBCCDA", uint32_t], ...]
 function initCharts(arrays) {
 	chartObjs = {}
 	let output = ``
@@ -53,10 +42,14 @@ function initCharts(arrays) {
 	for (const values of arrays) {
 		const chart_id = values[0]
 
-		chartObjs[chart_id] = {}
-		chartObjs[chart_id].scheduler = null
-		chartObjs[chart_id].time_window_idx = Math.floor(values[1] / Math.pow(10, 2)) % 100;	// 3rd and 4th digits from right
-		chartObjs[chart_id].update_window_idx = Math.floor(values[1] / Math.pow(10, 0)) % 100;	// last 2 digits
+		chartObjs[chart_id] = {
+			scheduler: null,
+			time_window_idx: Math.floor(values[1] / Math.pow(10, 2)) % 100,	// 3rd and 4th digits from right,
+			update_window_idx: Math.floor(values[1] / Math.pow(10, 0)) % 100,	// last 2 digits
+			custom_start_time: null,
+			custom_end_time: null,
+			custom_timestamp: null
+		}
 
 		output +=  /*html*/
 			`<div class="chart-card">
@@ -64,7 +57,7 @@ function initCharts(arrays) {
 				
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
-					<select id="timeWindow-${ chart_id }" onchange="set_timeWindow('${chart_id}'); esp_saveConfig('${chart_id}')">
+					<select id="timeWindow-${ chart_id }" onchange="start_update_scheduler('${chart_id}'); esp_saveConfig('${chart_id}')">
 						${ make_options(
 							chartObjs[chart_id].time_window_idx ?? appConfig.time_window_default_idx,
 							appConfig.time_window_strs,
@@ -73,8 +66,8 @@ function initCharts(arrays) {
 					</select>
 					<button class="btn" onclick="get_timeWindow('${chart_id}').value = '1'">Reset</button>
 
-					<label for="updateWindow-${ chart_id }">Update Window:</label>
-					<select id="updateWindow-${ chart_id }" onchange="set_updateWindow('${chart_id}'); esp_saveConfig('${chart_id}')">
+					<label for="updateInterval-${ chart_id }">Update Interval:</label>
+					<select id="updateInterval-${ chart_id }" onchange="start_update_scheduler('${chart_id}'); esp_saveConfig('${chart_id}')">
 						${ make_options(
 							chartObjs[chart_id].update_window_idx ?? appConfig.update_window_default_idx,
 							appConfig.update_window_strs,
@@ -108,6 +101,28 @@ function initCharts(arrays) {
 			// 	},
 			// },
 
+			hooks: {
+				setSelect: [
+					(u) => {
+						const min = u.scales.x.min
+						const max = u.scales.x.max
+					}
+				],
+				setScale: [
+					(u, scaleKey, scaleMin, scaleMax) => {
+						if (scaleKey !== 'x') return
+						const min = u.scales.x.min
+						const max = u.scales.x.max
+						chartObjs[chart_id].custom_start_time = min
+						chartObjs[chart_id].custom_end_time = max
+						chartObjs[chart_id].custom_timestamp = Date.now()/1000
+
+						let start = new Date(min*1000).toLocaleString()
+						let end = new Date(max*1000).toLocaleString()
+						// console.log('%cUser selected:', 'color: orange', start, end);
+					}
+				]
+			},
 			scales: {
 				x: { 
 					time: true,
@@ -173,7 +188,7 @@ function initCharts(arrays) {
 		};
 
 		chartObjs[chart_id].plot = new uPlot(chartOptions, [], document.getElementById(`chart-${chart_id}`))
-		set_updateWindow(chart_id);
+		start_update_scheduler(chart_id);
 	}
 }
 
@@ -206,12 +221,12 @@ async function esp_saveConfig(chart_id) {
 	scheduler.add(async () => {
 		let config = 1000000101	// Default value (5 minutes, 2 seconds)
 		const timeWindow = appConfig.time_window_mins.indexOf(Number(get_timeWindow(chart_id).value))
-		const updateWindow = appConfig.update_window_ms.indexOf(Number(get_updateWindow(chart_id).value))
-		console.log('%ctimeWindow:%d updateWindow:%d', 'color: red', timeWindow, updateWindow)
+		const updateInterval = appConfig.update_window_ms.indexOf(Number(get_updateInterval(chart_id).value))
+		console.log('%ctimeWindow:%d updateInterval:%d', 'color: red', timeWindow, updateInterval)
 
 		if (timeWindow > -1 && timeWindow < appConfig.time_window_mins.length &&
-			updateWindow > -1 && updateWindow < appConfig.update_window_ms.length) {
-			config = 1E9 + timeWindow*100 + updateWindow
+			updateInterval > -1 && updateInterval < appConfig.update_window_ms.length) {
+			config = 1E9 + timeWindow*100 + updateInterval
 		}
 
 		service_saveConfig(chart_id, config)
@@ -219,7 +234,7 @@ async function esp_saveConfig(chart_id) {
 }
 
 //! reload charts data
-async function esp_reloadData(chart_id) {
+async function reload_records(chart_id) {
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
@@ -241,7 +256,7 @@ async function esp_reloadData(chart_id) {
 			const resp = await fetch(`http://${serverIp}/g_rec?${params.toString()}`, {
 				method: 'GET'
 			})
-			console.log('%cesp_reloadData: %s', 'color: purple', resp.url)
+			console.log('%creload_records: %s', 'color: purple', resp.url)
 			const time_dif_ms = Date.now() - startTime
 
 			if (!resp.ok) {
@@ -267,7 +282,7 @@ async function esp_reloadData(chart_id) {
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				})
 				target = records[i]
-				console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
+				// console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
 			}
 
 			//# Sort by time - uPlot requires ascending order
@@ -284,7 +299,7 @@ async function esp_reloadData(chart_id) {
 				'color: green', 'color: blue'
 			)
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
-			set_timeWindow(chart_id)
+			update_timeWindow(chart_id)
 
 		} catch (error) {
 			console.error('Request failed:', error)
@@ -299,52 +314,70 @@ async function esp_reloadData(chart_id) {
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function set_timeWindow(chart_id) {
+function update_timeWindow(chart_id) {
+	const custom_start = chartObjs[chart_id].custom_start_time
+	const custom_end = chartObjs[chart_id].custom_end_time
+	const custom_timestamp = chartObjs[chart_id].custom_timestamp
+
+	// Apply custom range
+	if (custom_start && custom_end && custom_timestamp) {
+		const elapsed_s = Date.now()/1000 - custom_timestamp
+		const minX = custom_start + elapsed_s
+		const maxX = custom_end + elapsed_s
+		chartObjs[chart_id].custom_start_time = minX
+		chartObjs[chart_id].custom_end_time = maxX
+		chartObjs[chart_id].custom_timestamp = Date.now()/1000
+
+		chartObjs[chart_id].plot.setScale('x', { min: minX, max: maxX })
+		return
+	}
+
 	const timestamps = chartObjs[chart_id].plot.data[0];
 	if (timestamps.length === 0) return;
-	
-	let xMin, xMax;
-	const minutes = parseInt(get_timeWindow(chart_id).value);
 
-	if (minutes === 0) {
-		// Show all data
-		xMin = Math.min(...timestamps);
-		xMax = Math.max(...timestamps);
+	let xMin;
+	let xMax = Math.max(...timestamps)
+	const seconds = Number(get_timeWindow(chart_id).value) * 60
+
+	if (seconds === 0) {
+		xMin = Math.min(...timestamps)		// Show all data
 	} else {
-		// Show last X minutes
-		const latestTime = Math.max(...timestamps);
-		xMax = latestTime;
-		xMin = latestTime - (minutes * 60);
+		xMin = xMax - seconds				// Show last X seconds
 	}
 	
 	// Apply zoom
-	chartObjs[chart_id].plot.setScale('x', { min: xMin, max: xMax });
+	chartObjs[chart_id].plot.setScale('x', { min: xMin, max: xMax })
 }
 
 function getTodayDate(separator = '') {
-	const today = new Date();
-	const year = today.getFullYear();
-	const month = String(today.getMonth() + 1).padStart(2, '0');
-	const day = String(today.getDate()).padStart(2, '0');
-	return `${year}${separator}${month}${separator}${day}`;
+	const today = new Date()
+	const year = today.getFullYear()
+	const month = String(today.getMonth() + 1).padStart(2, '0')
+	const day = String(today.getDate()).padStart(2, '0')
+	return `${year}${separator}${month}${separator}${day}`
 }
 
 
-//# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+//# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE INTERVAL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function set_updateWindow(chart_id) {
-	const value = parseInt(get_updateWindow(chart_id).value)
+function start_update_scheduler(chart_id) {
+	// clear custom range
+	chartObjs[chart_id].custom_start_time = null
+	chartObjs[chart_id].custom_end_time = null
+	chartObjs[chart_id].custom_timestamp = null
+
+	const value = Number(get_updateInterval(chart_id).value)
 	if (value <= 0) return
 
 	//! IMPORTANT: clear scheduler
 	clearInterval(chartObjs[chart_id].scheduler)
 
 	// Update immediately once
-	esp_reloadData(chart_id);
+	reload_records(chart_id);
 	
 	// Set up interval
 	chartObjs[chart_id].scheduler = setInterval(() => {
-		esp_reloadData(chart_id);
+		reload_records(chart_id);
 	}, value);
 }
 
