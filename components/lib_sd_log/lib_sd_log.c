@@ -250,7 +250,7 @@ void sd_deinit(spi_host_device_t slot) {
 size_t sd_read_file(const char *path, char *buff, size_t len) {
 	FILE *f = fopen(path, "r");
     if (!f) {
-		ESP_LOGE_SD(TAG_SF, "Err sd_read_file: %s", path);
+		ESP_LOGE(TAG_SF, "Err sd_read_file: %s", path);
 		return 0;
 	}
 	
@@ -271,7 +271,7 @@ size_t sd_read_file(const char *path, char *buff, size_t len) {
 size_t sd_read_tail(const char *path, char *out, size_t max) {
     FILE *f = fopen(path, "rb");
     if (!f) {
-		ESP_LOGE_SD(TAG_SF, "Err sd_read_tail: %s", path);
+		ESP_LOGE(TAG_SF, "Err sd_read_tail: %s", path);
 		return 0;
 	}
     
@@ -505,7 +505,7 @@ int sd_ensure_dir(const char *path) {
 	}
 	// Not existing -> try to create
 	if (mkdir(path, 0775) != 0 && errno != EEXIST) {
-		ESP_LOGE_SD(TAG_SF, "mkdir(%s) failed: errno=%d", path, errno);
+		ESP_LOGE(TAG_SF, "mkdir(%s) failed: errno=%d", path, errno);
 		return 0;
 	}
 	return 1;
@@ -514,24 +514,24 @@ int sd_ensure_dir(const char *path) {
 int sd_overwrite_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "wb");	 // "wb" for overwrite binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG_SF, "Err overwrite: %s", path);
+		ESP_LOGE(TAG_SF, "Err sd_overwrite_bin: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG_SF, "overwritten %s", path);
+	ESP_LOGI(TAG_SF, "sd_overwrite_bin %s", path);
 	return 1;
 }
 
 int sd_append_bin(const char *path, void *data, int data_len) {
 	FILE *f = fopen(path, "ab");	 // "ab" for append binary - create if doesn't exit
 	if (f == NULL) {
-		ESP_LOGE_SD(TAG_SF, "Err write: %s", path);
+		ESP_LOGE(TAG_SF, "Err sd_append_bin: %s", path);
 		return 0;
 	}
 	fwrite(data, data_len, 1, f);
 	fclose(f);
-	ESP_LOGI_SD(TAG_SF, "written %s", path);
+	ESP_LOGI(TAG_SF, "sd_append_bin %s", path);
 	return 1;
 }
 

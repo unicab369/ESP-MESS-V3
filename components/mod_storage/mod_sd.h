@@ -152,13 +152,12 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	}
 }
 
-// 1. /log/<uuid>/2025/latest_0.bin → Current 0-30 minutes (1Hz = 1800 points)
-// 2. /log/<uuid>/2025/latest_1.bin → Current 30-60 minutes (1Hz = 1800 points)
+// 1. /log/<uuid>/new_0.bin → Current 0-30 minutes (1Hz = 1800 points)
+// 2. /log/<uuid>/new_1.bin → Current 30-60 minutes (1Hz = 1800 points)
 // 3. /log/<uuid>/2025/1230.bin → Daily aggregate (1/min = 1440 points OR 60 per hour)
 // 4. /log/<uuid>/2025/12.bin → Monthly aggregate (1/10min = 4320 records OR 144 per day)
 
-// #define BUFFER_DURATION_SEC 1800  // 30 minutes
-#define BUFFER_DURATION_SEC 10*60  // 10 minutes
+#define BUFFER_DURATION_SEC 30*60  // 30 minutes
 #define ROTATION_LOG_PATH_LEN 64
 
 static void rotationLog_getFile(uint32_t device_id, int target, char *file_path) {
@@ -182,7 +181,7 @@ static void rotationLog_write(
 		//# 1. Create UUID directory: /log/<uuid>
 		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
 		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>");
+			ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>");
 			continue;
 		}
 
@@ -218,7 +217,7 @@ static void rotationLog_write(
 			//#Create year directory: /log/<uuid>/2025
 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d", uuid, year);
 			if (!sd_ensure_dir(file_path)) {
-				ESP_LOGE_SD(TAG_SF, "Err: create /<uuid>/year");
+				ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>/year");
 				continue;
 			}
 
@@ -267,7 +266,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 	if (!f) {
-		ESP_LOGE_SD(TAG_SF, "Err write: %s", file_path);
+		ESP_LOGE(TAG_SF, "Err sd_save_config %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -288,7 +287,7 @@ static esp_err_t sd_load_config() {
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
-		ESP_LOGE_SD(TAG_SF, "Err read: %s", file_path);
+		ESP_LOGE(TAG_SF, "Err sd_load_config %s", file_path);
 		return ESP_FAIL;
 	}
 
@@ -346,10 +345,11 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 		// Safety check
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
-	
-	ESP_LOGW(TAG_SF, "configs count: %d\n", count);
+
 	*ptr++ = ']';
 	*ptr = '\0';
+
+	ESP_LOGW(TAG_SF, "make_device_configs_str count %d", count);
 	return ptr - buffer; // Return length
 }
 
@@ -374,9 +374,10 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
 	
-	ESP_LOGW(TAG_SF, "make_device_caches_str count: %d\n", count);
 	*ptr++ = ']';
 	*ptr = '\0';
+
+	ESP_LOGW(TAG_SF, "make_device_caches_str count %d\n", count);
 	return ptr - buffer; // Return length
 }
 

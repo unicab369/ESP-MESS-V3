@@ -301,7 +301,7 @@ esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path, int s
 
 	FILE* file = fopen(path, "rb");
 	if (file == NULL) {
-		ESP_LOGE_SD(TAG_HTTP, "Err opening file: %s", path);
+		ESP_LOGE(TAG_HTTP, "Err send_http_file open %s", path);
 		FS_ACCESS_RELEASE();	//# FS RELEASE
 		return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
 	}
@@ -314,7 +314,7 @@ esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path, int s
 	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {		
 		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
 		if (err != ESP_OK) {
-			ESP_LOGE(TAG_HTTP, "Err sending chunk: %d", err);
+			ESP_LOGE(TAG_HTTP, "Err send_http_file sending chunk %d", err);
 			fclose(file);
 			FS_ACCESS_RELEASE();	//# FS RELEASE
 			return err;
@@ -323,7 +323,7 @@ esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path, int s
 	}
 
 	uint32_t time_dif = (esp_timer_get_time() - timestamp)/1000;
-	ESP_LOGW_SD(TAG_HTTP, "path %s: %dB %ldms", path, total_bytes, time_dif);
+	ESP_LOGW(TAG_HTTP, "send_http_file %s: %dB %ldms", path, total_bytes, time_dif);
 
 	fclose(file);
 	FS_ACCESS_RELEASE();	//# FS RELEASE
@@ -399,7 +399,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		day = atoi(day_str);
 	}
 
-	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
+	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev:%s, yr:%d, mth:%d, day:%d, window:%d", 
 							device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {

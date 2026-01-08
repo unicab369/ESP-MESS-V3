@@ -168,7 +168,7 @@ void app_main(void) {
 
 			if (timeinfo.tm_year > 70) {
 				// year number starts at 1900, epoch year is 1970
-				ESP_LOGI_SD(TAG, "T%s", GET_TIME_STR);
+				ESP_LOGI(TAG, "T%s", GET_TIME_STR);
 				uint32_t uuid = 0xAABBCCDA;
 				uint32_t now = (uint32_t)time_now();
 
