@@ -372,7 +372,7 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 // /log/<uuid>/2025/12.bin - 10 minutes records of 30 days (4320 records - 144 per day)
 
 // fs_access - internal
-esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
+esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
@@ -399,7 +399,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 		day = atoi(day_str);
 	}
 
-	ESP_LOGI(TAG_HTTP, "HTTP_DATA_HANDLER dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
+	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev: %s, yr: %d, mth: %d, day: %d, window: %d", 
 							device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -428,7 +428,7 @@ esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req) {
 
 	if (window > 59 && month > 0 && day > 0) {
 		// if window is greater than 59 minutes, get daily log
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%d%d.bin", device_id, year, month, day);
+		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%02d%02d.bin", device_id, year, month, day);
 		return send_http_file(req, buffer, path_str, 1);
 	}
 	else {

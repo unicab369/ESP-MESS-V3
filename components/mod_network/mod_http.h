@@ -207,7 +207,7 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 	return ESP_OK;
 }
 
-esp_err_t HTTP_DATA_HANDLER(httpd_req_t *req);
+esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req);
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req);
@@ -275,13 +275,13 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &save_config_uri);
 
-		httpd_uri_t get_data_uri = {
-			.uri	  = "/data",
+		httpd_uri_t get_records_uri = {
+			.uri	  = "/g_rec",
 			.method   = HTTP_GET,
-			.handler  = HTTP_DATA_HANDLER,
+			.handler  = HTTP_GET_RECORDS_HANDLER,
 			.user_ctx = NULL,
 		};
-		httpd_register_uri_handler(server, &get_data_uri);
+		httpd_register_uri_handler(server, &get_records_uri);
 
 		httpd_uri_t scan_uri = {
 			.uri	  = "/scan",

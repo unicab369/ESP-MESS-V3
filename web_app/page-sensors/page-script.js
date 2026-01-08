@@ -238,7 +238,7 @@ async function esp_reloadData(chart_id) {
 		// indexDB_setup(chart_id)
 
 		try {
-			const resp = await fetch(`http://${serverIp}/data?${params.toString()}`, {
+			const resp = await fetch(`http://${serverIp}/g_rec?${params.toString()}`, {
 				method: 'GET'
 			})
 			console.log('%cesp_reloadData: %s', 'color: purple', resp.url)
@@ -266,7 +266,8 @@ async function esp_reloadData(chart_id) {
 					hum: dataView.getInt16(i * RECORD_SIZE + 6, true),
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				})
-				// console.log(`Record ${i}: Time=${new Date(timeStampArr[i]*1000).toLocaleString()}, Temp=${tempArr[i]/10}`)
+				target = records[i]
+				console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
 			}
 
 			//# Sort by time - uPlot requires ascending order
