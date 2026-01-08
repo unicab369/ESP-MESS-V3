@@ -366,10 +366,10 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	return send_http_file(req, buffer, full_path, 1);
 }
 
-// /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A
-// /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B
-// /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1440 records - 60 per hour)
-// /log/<uuid>/2025/12.bin - 10 minutes records of 30 days (4320 records - 144 per day)
+// /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A (1Hz = 1800 points)
+// /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B (1Hz = 1800 points)
+// /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
+// /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
 
 // fs_access - internal
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
@@ -384,6 +384,10 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	char window_str[8] = {0};
 	int window = 0, year = 0, month = 0, day = 0;
 
+	char start_sec_str[16] = {0};
+	char end_sec_str[16] = {0};
+	uint64_t start_sec = 0, end_sec = 0;
+
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
@@ -393,10 +397,18 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		httpd_query_key_value(query, "mth", month_str, sizeof(month_str));
 		httpd_query_key_value(query, "day", day_str, sizeof(day_str));
 		httpd_query_key_value(query, "win", window_str, sizeof(window_str));
+		
+		uint32_t time_ref = esp_timer_get_time();
+		httpd_query_key_value(query, "start", start_sec_str, sizeof(start_sec_str));
+		httpd_query_key_value(query, "end", end_sec_str, sizeof(end_sec_str));
+
 		window = atoi(window_str);
 		year = atoi(year_str);
 		month = atoi(month_str);
 		day = atoi(day_str);
+
+		start_sec = strtoull(start_sec_str, NULL, 10);
+		end_sec = strtoull(end_sec_str, NULL, 10);
 	}
 
 	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev:%s, yr:%d, mth:%d, day:%d, window:%d", 

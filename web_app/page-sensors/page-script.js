@@ -46,8 +46,8 @@ function initCharts(arrays) {
 			scheduler: null,
 			time_window_idx: Math.floor(values[1] / Math.pow(10, 2)) % 100,	// 3rd and 4th digits from right,
 			update_window_idx: Math.floor(values[1] / Math.pow(10, 0)) % 100,	// last 2 digits
-			custom_start_time: null,
-			custom_end_time: null,
+			record_min_time: 0,
+			record_max_time: 0,
 			custom_timestamp: null
 		}
 
@@ -104,22 +104,27 @@ function initCharts(arrays) {
 			hooks: {
 				setSelect: [
 					(u) => {
+						// this get triggers every time user finishes a selection
+						// however it only return the current scale and not the selected scale
 						const min = u.scales.x.min
 						const max = u.scales.x.max
+						console.log('%cUser selected:', 'color: orange', min, max)
+						chartObjs[chart_id].custom_timestamp = Date.now()/1000
 					}
 				],
 				setScale: [
 					(u, scaleKey, scaleMin, scaleMax) => {
+						// this get triggers every time .setScale() is called
+						// this returns the selected scale
 						if (scaleKey !== 'x') return
 						const min = u.scales.x.min
 						const max = u.scales.x.max
-						chartObjs[chart_id].custom_start_time = min
-						chartObjs[chart_id].custom_end_time = max
-						chartObjs[chart_id].custom_timestamp = Date.now()/1000
+						chartObjs[chart_id].record_min_time = min
+						chartObjs[chart_id].record_max_time = max
 
-						let start = new Date(min*1000).toLocaleString()
-						let end = new Date(max*1000).toLocaleString()
-						// console.log('%cUser selected:', 'color: orange', start, end);
+						// let start = new Date(min*1000).toLocaleString()
+						// let end = new Date(max*1000).toLocaleString()
+						// console.log('%cUser zoomed:', 'color: orange', start, end);
 					}
 				]
 			},
@@ -235,6 +240,33 @@ async function esp_saveConfig(chart_id) {
 
 //! reload charts data
 async function reload_records(chart_id) {
+	function update_timeWindow(chart_id) {
+		let xMin = chartObjs[chart_id].record_min_time
+		let xMax = chartObjs[chart_id].record_max_time
+		const custom_timestamp = chartObjs[chart_id].custom_timestamp
+
+		// Apply custom range
+		if (custom_timestamp) {
+			const elapsed_s = Date.now()/1000 - custom_timestamp
+			const new_minX = xMin + elapsed_s
+			const new_maxX = xMax + elapsed_s
+			chartObjs[chart_id].custom_start_time = new_minX
+			chartObjs[chart_id].custom_end_time = new_maxX
+			chartObjs[chart_id].custom_timestamp = Date.now()/1000
+			chartObjs[chart_id].plot.setScale('x', { min: new_minX, max: new_maxX })
+			return
+		}
+
+		const seconds = Number(get_timeWindow(chart_id).value) * 60
+
+		if (seconds > 0) {
+			xMin = xMax - seconds
+		}
+
+		// Apply zoom
+		chartObjs[chart_id].plot.setScale('x', { min: xMin, max: xMax })
+	}
+
 	const serverIp = get_serverIp()
 	if (!serverIp) return
 
@@ -249,7 +281,6 @@ async function reload_records(chart_id) {
 			day: today.getDate(),					// day
 			win: get_timeWindow(chart_id).value 	// time window
 		})
-		console.log('Fetching data:', params.toString())
 		// indexDB_setup(chart_id)
 
 		try {
@@ -271,7 +302,8 @@ async function reload_records(chart_id) {
 			const RECORD_SIZE = 10
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
-
+			console.log(`count: ${recordCount} records ${time_dif_ms} ms`)
+			
 			// Parse into combined array directly
 			const records = [];
 			for (let i = 0; i < recordCount; i++) {
@@ -294,10 +326,12 @@ async function reload_records(chart_id) {
 			const humArr = records.map(r => r.hum);
 			const luxArr = records.map(r => r.lux);
 
-			console.log(
-				`%cCount: ${recordCount} records,%c Resp time: ${time_dif_ms} ms`,
-				'color: green', 'color: blue'
-			)
+			// Dont update min/max if custom range is used
+			if (!chartObjs[chart_id].custom_timestamp) {
+				chartObjs[chart_id].record_min_time = timeStampArr[0] || 0
+				chartObjs[chart_id].record_max_time = timeStampArr.at(-1) || 0
+			}
+
 			chartObjs[chart_id].plot.setData([timeStampArr, tempArr, humArr, luxArr])
 			update_timeWindow(chart_id)
 
@@ -314,40 +348,6 @@ async function reload_records(chart_id) {
 
 //# %%%%%%%%%%%%%%%%%%%%%%%%%%% TIME WINDOW %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function update_timeWindow(chart_id) {
-	const custom_start = chartObjs[chart_id].custom_start_time
-	const custom_end = chartObjs[chart_id].custom_end_time
-	const custom_timestamp = chartObjs[chart_id].custom_timestamp
-
-	// Apply custom range
-	if (custom_start && custom_end && custom_timestamp) {
-		const elapsed_s = Date.now()/1000 - custom_timestamp
-		const minX = custom_start + elapsed_s
-		const maxX = custom_end + elapsed_s
-		chartObjs[chart_id].custom_start_time = minX
-		chartObjs[chart_id].custom_end_time = maxX
-		chartObjs[chart_id].custom_timestamp = Date.now()/1000
-
-		chartObjs[chart_id].plot.setScale('x', { min: minX, max: maxX })
-		return
-	}
-
-	const timestamps = chartObjs[chart_id].plot.data[0];
-	if (timestamps.length === 0) return;
-
-	let xMin;
-	let xMax = Math.max(...timestamps)
-	const seconds = Number(get_timeWindow(chart_id).value) * 60
-
-	if (seconds === 0) {
-		xMin = Math.min(...timestamps)		// Show all data
-	} else {
-		xMin = xMax - seconds				// Show last X seconds
-	}
-	
-	// Apply zoom
-	chartObjs[chart_id].plot.setScale('x', { min: xMin, max: xMax })
-}
 
 function getTodayDate(separator = '') {
 	const today = new Date()
@@ -357,20 +357,15 @@ function getTodayDate(separator = '') {
 	return `${year}${separator}${month}${separator}${day}`
 }
 
-
-//# %%%%%%%%%%%%%%%%%%%%%%%%%%% UPDATE INTERVAL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 function start_update_scheduler(chart_id) {
 	// clear custom range
-	chartObjs[chart_id].custom_start_time = null
-	chartObjs[chart_id].custom_end_time = null
 	chartObjs[chart_id].custom_timestamp = null
-
-	const value = Number(get_updateInterval(chart_id).value)
-	if (value <= 0) return
 
 	//! IMPORTANT: clear scheduler
 	clearInterval(chartObjs[chart_id].scheduler)
+
+	const value = Number(get_updateInterval(chart_id).value)
+	if (value <= 0) return
 
 	// Update immediately once
 	reload_records(chart_id);

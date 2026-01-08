@@ -152,10 +152,10 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	}
 }
 
-// 1. /log/<uuid>/new_0.bin → Current 0-30 minutes (1Hz = 1800 points)
-// 2. /log/<uuid>/new_1.bin → Current 30-60 minutes (1Hz = 1800 points)
-// 3. /log/<uuid>/2025/1230.bin → Daily aggregate (1/min = 1440 points OR 60 per hour)
-// 4. /log/<uuid>/2025/12.bin → Monthly aggregate (1/10min = 4320 records OR 144 per day)
+// /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A (1Hz = 1800 points)
+// /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B (1Hz = 1800 points)
+// /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
+// /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
 
 #define BUFFER_DURATION_SEC 30*60  // 30 minutes
 #define ROTATION_LOG_PATH_LEN 64
