@@ -1,6 +1,15 @@
 #include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
+void runtime_start(uint64_t *timestamp) {
+	*timestamp = esp_timer_get_time();
+}
+
+void runtime_print(const char *prefix, uint64_t *timestamp) {
+	uint64_t elapsed = esp_timer_get_time() - *timestamp;
+	printf("%s Runtime: %lld us\n", prefix, elapsed);
+}
+
 #include "mod_littlefs_log.h"
 #include "mod_nvs.h"
 #include "mod_spi.h"
@@ -18,16 +27,6 @@ SemaphoreHandle_t FS_MUTEX = NULL;
 atomic_stats_t http_stats = {0};
 
 void SERV_RELOAD_LOGS();
-
-
-void runtime_start(uint64_t *timestamp) {
-	*timestamp = esp_timer_get_time();
-}
-
-void runtime_print(const char *prefix, uint64_t *timestamp) {
-	uint64_t elapsed = esp_timer_get_time() - *timestamp;
-	ESP_LOGW(TAG_HTTP, "%s Runtime: %lld us", prefix, elapsed);
-}
 
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	atomic_tracker_start(&http_stats);
@@ -383,7 +382,7 @@ int send_record_file(
 }
 
 int get_n_records(
-	httpd_req_t *req, char *read_buffer, char *path, size_t n_records
+	httpd_req_t *req, char *path, char *read_buffer, char *OUTPUT_BUFFER, size_t n_records
 ) {
 	if (!FS_ACCESS_START(req)) return 0;
 
@@ -395,10 +394,11 @@ int get_n_records(
 		return 0;
 	}
 
-	// Get file size. takes about 2ms
+	// Get file size. takes about 4ms
 	fseek(file, 0, SEEK_END);
 	size_t file_size = ftell(file);
-	fseek(file, 0, SEEK_SET);	
+	fseek(file, 0, SEEK_SET);
+	
 	size_t total_records = file_size / RECORD_SIZE;
 	
 	// Calculate optimal spacing for exactly n_records
@@ -426,7 +426,7 @@ int get_n_records(
 		for (size_t i = 0; i < records_in_chunk; i++) {
 			// Use calculated spacing
 			if (current_record % (spacing + 1) == 0) {
-				memcpy(CUSTOM_BUFFER + custom_pos, read_buffer + (i * RECORD_SIZE), RECORD_SIZE);
+				memcpy(OUTPUT_BUFFER + custom_pos, read_buffer + (i * RECORD_SIZE), RECORD_SIZE);
 				custom_pos += RECORD_SIZE;
 				records_collected++;
 				if (records_collected >= n_records) break;
@@ -501,7 +501,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	uint64_t start_time;
 	runtime_start(&start_time);
 
-	for (int i=0; i < LOG_RECORD_COUNT; i++) {
+	for (int i=0; i < LOG_NODE_COUNT; i++) {
 		if (RECORD_AGGREGATE[i].uuid != uuid) continue;
 		found = 1; break;
 	}
@@ -526,11 +526,11 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		// else get newest logs
 		rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
 		//int len = send_record_file(req, buffer, path_str, 1767888434);
-		// int len = send_record_file(req, buffer, path_str, 0);		// 90ms
+		int len = send_record_file(req, buffer, path_str, 0);		// 95ms
 
-		memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
-		int len = get_n_records(req, buffer, path_str, 100);
-		httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
+		// memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
+		// int len = get_n_records(req, path_str, buffer, CUSTOM_BUFFER, 100);
+		// httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
 
 		runtime_print("HTTP_GET_RECORDS_HANDLER", &start_time);
 		ESP_LOGW(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER %s %dB", path_str, len);

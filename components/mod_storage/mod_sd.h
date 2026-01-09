@@ -101,7 +101,8 @@ void sd_test(void) {
 
 
 //###################################################
-
+#define LOG_NODE_COUNT 10
+#define LOG_RECORD_COUNT 400		// 400 seconds of 10 bytes
 
 typedef struct {
 	uint32_t timestamp;
@@ -120,6 +121,7 @@ typedef struct {
 	int32_t sum1;
 	int32_t sum2;
 	int32_t sum3;
+	record_t records[LOG_RECORD_COUNT];
 } record_aggregate_t;
 
 typedef struct {
@@ -127,13 +129,11 @@ typedef struct {
 	uint32_t timestamp;
 } device_cache_t;
 
-
-#define LOG_RECORD_COUNT 10
-record_aggregate_t RECORD_AGGREGATE[LOG_RECORD_COUNT] = {0};
-device_cache_t DEVICE_CACHE[LOG_RECORD_COUNT] = {0};
+record_aggregate_t RECORD_AGGREGATE[LOG_NODE_COUNT] = {0};
+device_cache_t DEVICE_CACHE[LOG_NODE_COUNT] = {0};
 
 static void cache_device(uint32_t uuid, uint32_t time_ref) {
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		device_cache_t *target = &DEVICE_CACHE[i];
 		
 		if (target->uuid == uuid) {
@@ -157,12 +157,48 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 // /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
 // /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
 
-#define BUFFER_DURATION_SEC 30*60  // 30 minutes
+#define BUFFER_DURATION_SEC 1800  // 30 minutes
 #define ROTATION_LOG_PATH_LEN 64
+
+#define FILE_SIZE (10*1800)		// 1800 records 10 bytes each
 
 static void rotation_get_filePath(uint32_t device_id, int target, char *file_path) {
 	snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/new_%d.bin", 
 			device_id, target);
+}
+
+void append_to_circular_buffer(const char* file_path, const void* data, size_t size) {
+	static size_t write_pos = 0;
+	
+	FILE* f = fopen(file_path, "rb+");
+	if (!f) {
+		// Create fixed-size file on first run
+		printf("*** Creating file %s\n", file_path);
+		f = fopen(file_path, "wb");
+		if (f) {
+			// Pre-allocate file size
+			uint8_t zero_buffer[512] = {0};
+			size_t remaining = FILE_SIZE;
+			
+			// fill with zeros
+			while (remaining > 0) {
+				size_t to_write = (remaining > sizeof(zero_buffer)) ? 
+								sizeof(zero_buffer) : remaining;
+				fwrite(zero_buffer, 1, to_write, f);
+				remaining -= to_write;
+			}
+			fclose(f);
+			f = fopen(file_path, "rb+");
+		}
+	}
+	
+	if (f) {
+		// printf("*** writing file %s at pos %d\n", file_path, write_pos);
+		fseek(f, write_pos, SEEK_SET);
+		fwrite(data, 1, size, f);
+		write_pos = (write_pos + size) % FILE_SIZE;
+		fclose(f);
+	}
 }
 
 static void rotationLog_write(
@@ -173,7 +209,7 @@ static void rotationLog_write(
 	int month = tm->tm_mon + 1;
 	int day = tm->tm_mday;
 
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		//! filter for valid uuid and config
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid != uuid || target->config == 0) continue;
@@ -185,10 +221,17 @@ static void rotationLog_write(
 			continue;
 		}
 
-		// //# 2. Check rotation for latest_<0|1>.bin files
+		uint64_t run_time;
+		runtime_start(&run_time);
+
+		rotation_get_filePath(uuid, 1, file_path);
+		append_to_circular_buffer(file_path, record, sizeof(record_t));
+	
+		// //# 2. Check rotation for latest_<0|1>.bin files - takes about 15ms
 		// if (target->last_log_rotation_sec == 0 || 
 		// 	time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
 		// ) {
+		// 	printf("*** rotationLog_write rotate\n");
 		// 	// Time to rotate - switch and write to the OTHER file
 		// 	int new_rotation = (target->rotation == 0) ? 1 : 0;
 		// 	rotation_get_filePath(uuid, new_rotation, file_path);
@@ -204,8 +247,10 @@ static void rotationLog_write(
 		// 	sd_append_bin(file_path, record, sizeof(record_t));
 		// }
 
-		rotation_get_filePath(uuid, 1, file_path);
-		sd_append_bin(file_path, record, sizeof(record_t));
+		// rotation_get_filePath(uuid, 1, file_path);
+		// sd_append_bin(file_path, record, sizeof(record_t));
+
+		runtime_print("*** rotationLog_write", &run_time);
 
 		// Update aggregation (ALWAYS)
 		target->count++;
@@ -250,7 +295,7 @@ static void rotationLog_write(
 // Config: /log/config.bin
 static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	// need 2 passes
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		//# overwrite existing uuid's config
 		if (target->uuid == uuid) {
@@ -273,7 +318,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 		return ESP_FAIL;
 	}
 
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid == 0) continue;
 
@@ -332,7 +377,7 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	int count = 0;
 	*ptr++ = '[';
 	
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 
 		//! filter for valid uuid and config
@@ -362,7 +407,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	char *ptr = buffer;
 	*ptr++ = '[';
 	
-	for (int i = 0; i < LOG_RECORD_COUNT; i++) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
         device_cache_t *target = &DEVICE_CACHE[i];
         if (target->uuid == 0) break;
 		

@@ -3,8 +3,8 @@ let chartObjs = {};
 
 let appConfig = {
 	'time_window_default_idx': 1,
-	'time_window_mins': [1, 5, 20, 60, 300, 720, 1440, 4320, 10080, 43200, 129600, 259200, 0],
-	'time_window_strs': ['1 minute', '5 minutes', '20 minutes', '1 hour', '5 hours', '12 hours',
+	'time_window_mins': [1, 5, 10, 20, 60, 300, 720, 1440, 4320, 10080, 43200, 129600, 259200, 0],
+	'time_window_strs': ['1 minute', '5 minutes', '10 minutes', '20 minutes', '1 hour', '5 hours', '12 hours',
 						'1 day', '3 days', '1 week', '1 month', '3 months', '6 months', '0 (all)'],
 
 	'update_window_default_idx': 1,
@@ -305,21 +305,29 @@ async function reload_records(chart_id) {
 			const dataView = new DataView(buffer)
 			
 			const time_dif_ms = Date.now() - startTime
-			console.log(`count: ${recordCount} records ${time_dif_ms} ms`)
 
 			// Parse into combined array directly
 			const records = [];
 			for (let i = 0; i < recordCount; i++) {
-				records.push({
-					time: dataView.getUint32(i * RECORD_SIZE, true),
+				// filter for valid time
+				const time_value = dataView.getUint32(i * RECORD_SIZE, true)
+				if (time_value < 1700000000 || time_value > 1768000000) continue
+
+				const rec = {
+					time: time_value,
 					temp: dataView.getUint16(i * RECORD_SIZE + 4, true),
 					hum: dataView.getInt16(i * RECORD_SIZE + 6, true),
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
-				})
-				const target = records[i]
+				}
+				records.push(rec)
+				// console.log("t_val", time_value)
+
+				// const target = records[i]
 				// console.log(`Record ${i}: Time=${target.time}, Temp=${target.temp}`)
-				// console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
+				// // console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
 			}
+
+			console.log(`count: ${records.length}/${recordCount} records ${time_dif_ms} ms`)
 
 			// const target = records.at(-1)
 			// console.log(`Record ${recordCount}: Time=${target.time}, Temp=${target.temp}`)
