@@ -152,6 +152,38 @@ void app_main(void) {
 			}
 
 			sd_load_config();
+
+			record_file_start("/sdcard/log/data.bin");
+
+			record_t rec = {
+				.timestamp = 222,
+				.value1 = 1,
+				.value2 = 2,
+				.value3 = 3,
+			};
+			
+			uint64_t time_ref;
+
+			for (int i = 0; i < 410; i++) {
+				runtime_start(&time_ref);
+				int ok = record_file_insert("/sdcard/log/data.bin", &rec, RECORD_SIZE);
+				runtime_print("*** write time: ", &time_ref);
+				if (!ok) break;
+			}
+
+			record_t last_record;
+			if (record_file_read_last("/sdcard/log/data.bin", &last_record, RECORD_SIZE)) {
+				printf("Last record: %ld %d %d\n", 
+					last_record.timestamp, last_record.value1, last_record.value2);
+			}
+
+			static record_t all_records[400];
+			runtime_start(&time_ref);
+			int count = record_file_parse("/sdcard/log/data.bin", all_records, 400, RECORD_SIZE);
+			runtime_print("*** readTime time: ", &time_ref);
+			printf("Read %d records\n", count);
+
+			record_file_status("/sdcard/log/data.bin", RECORD_SIZE);
 		}
 	}
 
@@ -173,7 +205,7 @@ void app_main(void) {
 				uint32_t now = (uint32_t)time_now();
 
 				for (int i=0; i<10; i++) {
-					record_t records = {
+					record_t record = {
 						.timestamp = now,  // Fixed timestamp
 						// .value1 = 10,
 						// .value2 = 20,
@@ -186,9 +218,10 @@ void app_main(void) {
 					uuid += i;
 					cache_device(uuid, now);
 
+					cache_record(uuid, &record);
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
-					// 	rotationLog_write(uuid, now, &timeinfo, &records);
+					// 	rotationLog_write(uuid, now, &timeinfo, &record);
 					// 	xSemaphoreGive(FS_MUTEX);  //# Release mutex
 					// } else {
 					// 	ESP_LOGW(TAG_SF, "SD card busy, skipping log write");

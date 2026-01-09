@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 
 #include "../lib_sd_log/lib_sd_log.h"
+#include "mod_record_file.h"
 
 // link: https://github.com/espressif/esp-idf/tree/master/examples/storage/sd_card
 
@@ -102,7 +103,7 @@ void sd_test(void) {
 
 //###################################################
 #define LOG_NODE_COUNT 10
-#define LOG_RECORD_COUNT 400		// 400 seconds of 10 bytes
+#define LOG_RECORD_COUNT 300		// 300 seconds of 10 bytes
 
 typedef struct {
 	uint32_t timestamp;
@@ -116,11 +117,8 @@ typedef struct {
 	uint32_t last_log_rotation_sec;
 	uint32_t last_minute_update_sec;
 	uint32_t config;
-	uint8_t count;			// aggregated count
 	uint8_t rotation;
-	int32_t sum1;
-	int32_t sum2;
-	int32_t sum3;
+	uint16_t count;
 	record_t records[LOG_RECORD_COUNT];
 } record_aggregate_t;
 
@@ -129,8 +127,8 @@ typedef struct {
 	uint32_t timestamp;
 } device_cache_t;
 
-record_aggregate_t RECORD_AGGREGATE[LOG_NODE_COUNT] = {0};
-device_cache_t DEVICE_CACHE[LOG_NODE_COUNT] = {0};
+static record_aggregate_t RECORD_AGGREGATE[LOG_NODE_COUNT] = {0};
+static device_cache_t DEVICE_CACHE[LOG_NODE_COUNT] = {0};
 
 static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
@@ -152,6 +150,22 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	}
 }
 
+static void cache_record(
+	uint32_t uuid, record_t *record
+) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid != uuid) continue;
+
+		// Found existing UUID
+		target->records[target->count].timestamp = record->timestamp;
+		target->records[target->count].value1 = record->value1;
+		target->records[target->count].value2 = record->value2;
+		target->records[target->count].value3 = record->value3;
+		target->count = (target->count + 1) % LOG_RECORD_COUNT;
+		break;  // Done!
+	}
+}
 // /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A (1Hz = 1800 points)
 // /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B (1Hz = 1800 points)
 // /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
@@ -201,96 +215,96 @@ void append_to_circular_buffer(const char* file_path, const void* data, size_t s
 	}
 }
 
-static void rotationLog_write(
-	uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record
-) {
-	char file_path[ROTATION_LOG_PATH_LEN];
-	int year = tm->tm_year + 1900;
-	int month = tm->tm_mon + 1;
-	int day = tm->tm_mday;
+// static void rotationLog_write(
+// 	uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record
+// ) {
+// 	char file_path[ROTATION_LOG_PATH_LEN];
+// 	int year = tm->tm_year + 1900;
+// 	int month = tm->tm_mon + 1;
+// 	int day = tm->tm_mday;
 
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		//! filter for valid uuid and config
-		record_aggregate_t *target = &RECORD_AGGREGATE[i];
-		if (target->uuid != uuid || target->config == 0) continue;
+// 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
+// 		//! filter for valid uuid and config
+// 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+// 		if (target->uuid != uuid || target->config == 0) continue;
 
-		//# 1. Create UUID directory: /log/<uuid>
-		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
-		if (!sd_ensure_dir(file_path)) {
-			ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>");
-			continue;
-		}
+// 		//# 1. Create UUID directory: /log/<uuid>
+// 		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
+// 		if (!sd_ensure_dir(file_path)) {
+// 			ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>");
+// 			continue;
+// 		}
 
-		uint64_t run_time;
-		runtime_start(&run_time);
+// 		uint64_t run_time;
+// 		runtime_start(&run_time);
 
-		rotation_get_filePath(uuid, 1, file_path);
-		append_to_circular_buffer(file_path, record, sizeof(record_t));
+// 		rotation_get_filePath(uuid, 1, file_path);
+// 		append_to_circular_buffer(file_path, record, sizeof(record_t));
 	
-		// //# 2. Check rotation for latest_<0|1>.bin files - takes about 15ms
-		// if (target->last_log_rotation_sec == 0 || 
-		// 	time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
-		// ) {
-		// 	printf("*** rotationLog_write rotate\n");
-		// 	// Time to rotate - switch and write to the OTHER file
-		// 	int new_rotation = (target->rotation == 0) ? 1 : 0;
-		// 	rotation_get_filePath(uuid, new_rotation, file_path);
-		// 	sd_overwrite_bin(file_path, record, sizeof(record_t));
+// 		// //# 2. Check rotation for latest_<0|1>.bin files - takes about 15ms
+// 		// if (target->last_log_rotation_sec == 0 || 
+// 		// 	time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
+// 		// ) {
+// 		// 	printf("*** rotationLog_write rotate\n");
+// 		// 	// Time to rotate - switch and write to the OTHER file
+// 		// 	int new_rotation = (target->rotation == 0) ? 1 : 0;
+// 		// 	rotation_get_filePath(uuid, new_rotation, file_path);
+// 		// 	sd_overwrite_bin(file_path, record, sizeof(record_t));
 			
-		// 	// Update rotation index to point to the new_rotation
-		// 	target->rotation = new_rotation;
-		// 	target->last_log_rotation_sec = time_ref;
-		// }
-		// else {
-		// 	// Append to the current active file
-		// 	rotation_get_filePath(uuid, target->rotation, file_path);
-		// 	sd_append_bin(file_path, record, sizeof(record_t));
-		// }
+// 		// 	// Update rotation index to point to the new_rotation
+// 		// 	target->rotation = new_rotation;
+// 		// 	target->last_log_rotation_sec = time_ref;
+// 		// }
+// 		// else {
+// 		// 	// Append to the current active file
+// 		// 	rotation_get_filePath(uuid, target->rotation, file_path);
+// 		// 	sd_append_bin(file_path, record, sizeof(record_t));
+// 		// }
 
-		// rotation_get_filePath(uuid, 1, file_path);
-		// sd_append_bin(file_path, record, sizeof(record_t));
+// 		// rotation_get_filePath(uuid, 1, file_path);
+// 		// sd_append_bin(file_path, record, sizeof(record_t));
 
-		runtime_print("*** rotationLog_write", &run_time);
+// 		runtime_print("*** rotationLog_write", &run_time);
 
-		// Update aggregation (ALWAYS)
-		target->count++;
-		target->sum1 += record->value1;
-		target->sum2 += record->value2;
-		target->sum3 += record->value3;
+// 		// Update aggregation (ALWAYS)
+// 		target->count++;
+// 		target->sum1 += record->value1;
+// 		target->sum2 += record->value2;
+// 		target->sum3 += record->value3;
 
-		//# 3. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
-		if (target->last_minute_update_sec == 0 || 
-			time_ref - target->last_minute_update_sec >= 60
-		) {
-			//#Create year directory: /log/<uuid>/2025
-			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d", uuid, year);
-			if (!sd_ensure_dir(file_path)) {
-				ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>/year");
-				continue;
-			}
+// 		//# 3. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
+// 		if (target->last_minute_update_sec == 0 || 
+// 			time_ref - target->last_minute_update_sec >= 60
+// 		) {
+// 			//#Create year directory: /log/<uuid>/2025
+// 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d", uuid, year);
+// 			if (!sd_ensure_dir(file_path)) {
+// 				ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>/year");
+// 				continue;
+// 			}
 
-			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
-				uuid, year, month, day
-			);
+// 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
+// 				uuid, year, month, day
+// 			);
 
-			record_t minute_avg = {
-				.timestamp = record->timestamp,
-				.value1 = target->sum1 / target->count,
-				.value2 = target->sum2 / target->count,
-				.value3 = target->sum3 / target->count
-			};
+// 			record_t minute_avg = {
+// 				.timestamp = record->timestamp,
+// 				.value1 = target->sum1 / target->count,
+// 				.value2 = target->sum2 / target->count,
+// 				.value3 = target->sum3 / target->count
+// 			};
 
-			sd_append_bin(file_path, &minute_avg, sizeof(record_t));
-			target->last_minute_update_sec = time_ref;
+// 			sd_append_bin(file_path, &minute_avg, sizeof(record_t));
+// 			target->last_minute_update_sec = time_ref;
 
-    		// RESET aggregates
-			target->count = 0;
-			target->sum1 = 0;
-			target->sum2 = 0;
-			target->sum3 = 0;
-		}
-	}
-}
+//     		// RESET aggregates
+// 			target->count = 0;
+// 			target->sum1 = 0;
+// 			target->sum2 = 0;
+// 			target->sum3 = 0;
+// 		}
+// 	}
+// }
 
 // Config: /log/config.bin
 static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
@@ -359,6 +373,7 @@ static esp_err_t sd_load_config() {
 		record_aggregate_t *target = &RECORD_AGGREGATE[loaded];
 		target->uuid = uuid;
 		target->config = config;
+		memset(target->records, 0, sizeof(record_t) * LOG_RECORD_COUNT);
 		loaded++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
 	}
@@ -460,4 +475,34 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size
 	ESP_LOGI(TAG_SF, "Read %d records from %s", records_read, file_path);
 
 	return records_read;
+}
+
+//#######################################
+
+
+
+//! NOTE
+// Pre-allocate cluster chain to avoid FAT updates
+void create_preallocated_file(const char* filename) {
+	// Create file with 1 cluster (4KB) allocated
+	FILE* f = fopen(filename, "wb");
+	
+	// Write dummy data to allocate cluster
+	uint8_t dummy[4096] = {0};
+	fwrite(dummy, 1, sizeof(dummy), f);
+	fclose(f);
+	
+	// Now FAT entry exists, future writes don't update FAT!
+}
+
+void append_to_preallocated(const char* filename, const void* data, size_t size) {
+	// Open for update (cluster already allocated)
+	FILE* f = fopen(filename, "rb+");
+	
+	// Overwrite existing data (same cluster)
+	fseek(f, 0, SEEK_SET);
+	fwrite(data, 1, size, f);
+	
+	// Only writes data block, no FAT updates!
+	fclose(f);
 }

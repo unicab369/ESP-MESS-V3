@@ -17,7 +17,7 @@ void runtime_print(const char *prefix, uint64_t *timestamp) {
 
 #include "../components/analytics.h"
 
-#define RECORD_SIZE 10				// 10 bytes
+#define RECORD_SIZE sizeof(record_t)				// 10 bytes
 #define HTTP_CHUNK_SIZE 1020		//! NOTE chunk_size need to be multiple of RECORD_SIZE
 static char CUSTOM_BUFFER[HTTP_CHUNK_SIZE];
 
@@ -498,12 +498,20 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 	int found = 0;
 
+	esp_err_t ret;
 	uint64_t start_time;
 	runtime_start(&start_time);
 
 	for (int i=0; i < LOG_NODE_COUNT; i++) {
-		if (RECORD_AGGREGATE[i].uuid != uuid) continue;
-		found = 1; break;
+		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		if (target->uuid != uuid) continue;
+		found = 1;
+		runtime_print("**** ram read", &start_time);
+
+		runtime_start(&start_time);
+		ret = httpd_resp_send(req, (const char*)target->records, LOG_RECORD_COUNT * RECORD_SIZE);
+		runtime_print("**** httpd_resp_send", &start_time);
+		return ret;
 	}
 	if (!found) {
 		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Record not registered");
@@ -520,8 +528,8 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		send_http_file(req, buffer, path_str);
 	}
 	else {
-		uint64_t start_time;
-		runtime_start(&start_time);
+		// uint64_t start_time;
+		// runtime_start(&start_time);
 
 		// else get newest logs
 		rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
