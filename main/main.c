@@ -186,13 +186,13 @@ void app_main(void) {
 					uuid += i;
 					cache_device(uuid, now);
 
-					// $Take mutex
-					if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
-						rotationLog_write(uuid, now, &timeinfo, &records);
-						xSemaphoreGive(FS_MUTEX);  // $Release mutex
-					} else {
-						ESP_LOGW(TAG_SF, "SD card busy, skipping log write");
-					}
+					//# Take mutex
+					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
+					// 	rotationLog_write(uuid, now, &timeinfo, &records);
+					// 	xSemaphoreGive(FS_MUTEX);  //# Release mutex
+					// } else {
+					// 	ESP_LOGW(TAG_SF, "SD card busy, skipping log write");
+					// }
 				}
 			}
 

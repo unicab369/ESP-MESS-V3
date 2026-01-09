@@ -160,7 +160,7 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 #define BUFFER_DURATION_SEC 30*60  // 30 minutes
 #define ROTATION_LOG_PATH_LEN 64
 
-static void rotationLog_getFile(uint32_t device_id, int target, char *file_path) {
+static void rotation_get_filePath(uint32_t device_id, int target, char *file_path) {
 	snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/new_%d.bin", 
 			device_id, target);
 }
@@ -185,24 +185,27 @@ static void rotationLog_write(
 			continue;
 		}
 
-		//# 2. Check rotation for latest_<0|1>.bin files
-		if (target->last_log_rotation_sec == 0 || 
-			time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
-		) {
-			// Time to rotate - switch and write to the OTHER file
-			int new_rotation = (target->rotation == 0) ? 1 : 0;
-			rotationLog_getFile(uuid, new_rotation, file_path);
-			sd_overwrite_bin(file_path, record, sizeof(record_t));
+		// //# 2. Check rotation for latest_<0|1>.bin files
+		// if (target->last_log_rotation_sec == 0 || 
+		// 	time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
+		// ) {
+		// 	// Time to rotate - switch and write to the OTHER file
+		// 	int new_rotation = (target->rotation == 0) ? 1 : 0;
+		// 	rotation_get_filePath(uuid, new_rotation, file_path);
+		// 	sd_overwrite_bin(file_path, record, sizeof(record_t));
 			
-			// Update rotation index to point to the new_rotation
-			target->rotation = new_rotation;
-			target->last_log_rotation_sec = time_ref;
-		}
-		else {
-			// Append to the current active file
-			rotationLog_getFile(uuid, target->rotation, file_path);
-			sd_append_bin(file_path, record, sizeof(record_t));
-		}
+		// 	// Update rotation index to point to the new_rotation
+		// 	target->rotation = new_rotation;
+		// 	target->last_log_rotation_sec = time_ref;
+		// }
+		// else {
+		// 	// Append to the current active file
+		// 	rotation_get_filePath(uuid, target->rotation, file_path);
+		// 	sd_append_bin(file_path, record, sizeof(record_t));
+		// }
+
+		rotation_get_filePath(uuid, 1, file_path);
+		sd_append_bin(file_path, record, sizeof(record_t));
 
 		// Update aggregation (ALWAYS)
 		target->count++;

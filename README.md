@@ -85,3 +85,7 @@ create `flash_data` folder (or your custom folder name) under the main project f
 ## Memory Analytic
 idf.py size
 idf.py size-components
+
+
+## Set Log Debug and Verbose
+idf.py menuconfig > Component config > Log > Log Level > Maximum log verbosity

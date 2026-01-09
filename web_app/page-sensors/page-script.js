@@ -275,11 +275,13 @@ async function reload_records(chart_id) {
 		let startTime = Date.now()
 
 		const params = new URLSearchParams({
-			dev: chart_id,							// device
-			yr: today.getFullYear(),				// year
-			mth: today.getMonth() + 1,				// month
-			day: today.getDate(),					// day
-			win: get_timeWindow(chart_id).value 	// time window
+			dev: chart_id,									// device
+			yr: today.getFullYear(),						// year
+			mth: today.getMonth() + 1,						// month
+			day: today.getDate(),							// day
+			win: get_timeWindow(chart_id).value, 			// time window
+			minT: 1767886318,	// min time
+			maxT: chartObjs[chart_id].record_max_time || 0,	// max time
 		})
 		// indexDB_setup(chart_id)
 
@@ -303,7 +305,7 @@ async function reload_records(chart_id) {
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
 			console.log(`count: ${recordCount} records ${time_dif_ms} ms`)
-			
+
 			// Parse into combined array directly
 			const records = [];
 			for (let i = 0; i < recordCount; i++) {
@@ -313,9 +315,13 @@ async function reload_records(chart_id) {
 					hum: dataView.getInt16(i * RECORD_SIZE + 6, true),
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				})
-				target = records[i]
+				const target = records[i]
+				console.log(`Record ${i}: Time=${target.time}, Temp=${target.temp}`)
 				// console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
 			}
+
+			// const target = records.at(-1)
+			// console.log(`Record ${recordCount}: Time=${target.time}, Temp=${target.temp}`)
 
 			//# Sort by time - uPlot requires ascending order
 			records.sort((a, b) => a.time - b.time);
