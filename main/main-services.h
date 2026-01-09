@@ -343,40 +343,6 @@ esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path) {
 	return ESP_OK;
 }
 
-// fs_access -internal
-esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-	httpd_resp_set_type(req, "text/plain");
-
-	char query[128];
-	char type_str[4] = {0};
-	char size_str[8] = {0};
-	char pa_str[16] = {0};
-	char pb_str[16] = {0};
-	char pc_str[16] = {0};
-
-	size_t query_len = httpd_req_get_url_query_len(req) + 1;
-	if (query_len > sizeof(query)) query_len = sizeof(query);
-
-	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
-		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
-		httpd_query_key_value(query, "pa", pa_str, sizeof(pa_str));
-		httpd_query_key_value(query, "pb", pb_str, sizeof(pb_str));
-		httpd_query_key_value(query, "pc", pc_str, sizeof(pc_str));
-	}
-
-	int type = atoi(type_str);
-	int size = atoi(size_str);
-
-	char full_path[64];
-	char buffer[1024];
-	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
-	send_http_file(req, buffer, full_path);
-
-	return httpd_resp_send_chunk(req, NULL, 0);
-}
-
 int send_record_file(
 	httpd_req_t *req, char *buffer, char *path, uint32_t min_timestamp
 ) {
@@ -392,8 +358,6 @@ int send_record_file(
 
 	size_t bytes_read;
 	size_t total_bytes = 0;
-	uint64_t start_time;
-	runtime_start(&start_time);
 
 	// takes about 7ms to open a file, 3ms to read a chunk
 	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
@@ -562,11 +526,11 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		// else get newest logs
 		rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
 		//int len = send_record_file(req, buffer, path_str, 1767888434);
-		// int len = send_record_file(req, buffer, path_str, 0);
+		// int len = send_record_file(req, buffer, path_str, 0);		// 90ms
 
 		memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
 		int len = get_n_records(req, buffer, path_str, 100);
-		httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);
+		httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
 
 		runtime_print("HTTP_GET_RECORDS_HANDLER", &start_time);
 		ESP_LOGW(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER %s %dB", path_str, len);
@@ -773,6 +737,41 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	FS_ACCESS_RELEASE();	//# FS RELEASE
 	return httpd_resp_send(req, output, len);
 }
+
+// fs_access -internal
+esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+	httpd_resp_set_type(req, "text/plain");
+
+	char query[128];
+	char type_str[4] = {0};
+	char size_str[8] = {0};
+	char pa_str[16] = {0};
+	char pb_str[16] = {0};
+	char pc_str[16] = {0};
+
+	size_t query_len = httpd_req_get_url_query_len(req) + 1;
+	if (query_len > sizeof(query)) query_len = sizeof(query);
+
+	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
+		httpd_query_key_value(query, "type", type_str, sizeof(type_str));
+		httpd_query_key_value(query, "size", size_str, sizeof(size_str));
+		httpd_query_key_value(query, "pa", pa_str, sizeof(pa_str));
+		httpd_query_key_value(query, "pb", pb_str, sizeof(pb_str));
+		httpd_query_key_value(query, "pc", pc_str, sizeof(pc_str));
+	}
+
+	int type = atoi(type_str);
+	int size = atoi(size_str);
+
+	char full_path[64];
+	char buffer[1024];
+	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
+	send_http_file(req, buffer, full_path);
+
+	return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 
 //###################################################
 //# Diagnostic Helpers

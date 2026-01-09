@@ -290,7 +290,6 @@ async function reload_records(chart_id) {
 				method: 'GET'
 			})
 			console.log('%creload_records: %s', 'color: purple', resp.url)
-			const time_dif_ms = Date.now() - startTime
 
 			if (!resp.ok) {
 				const errorText = await resp.text()
@@ -304,6 +303,8 @@ async function reload_records(chart_id) {
 			const RECORD_SIZE = 10
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
+			
+			const time_dif_ms = Date.now() - startTime
 			console.log(`count: ${recordCount} records ${time_dif_ms} ms`)
 
 			// Parse into combined array directly
@@ -316,7 +317,7 @@ async function reload_records(chart_id) {
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				})
 				const target = records[i]
-				console.log(`Record ${i}: Time=${target.time}, Temp=${target.temp}`)
+				// console.log(`Record ${i}: Time=${target.time}, Temp=${target.temp}`)
 				// console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
 			}
 
