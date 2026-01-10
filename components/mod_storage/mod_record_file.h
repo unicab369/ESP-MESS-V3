@@ -84,7 +84,11 @@ int record_file_write(
 	const char* filename, const void *records, size_t record_size, int count
 ) {
 	FILE* f = fopen(filename, "rb+");
-	if (!f) return 0;
+	if (!f) {
+		ESP_LOGE(TAG_RECORD, "Err record_file_write can't open: %s", filename);
+		return 0;
+	}
+
 	// Read current header
 	file_header_t header;
 	fread(&header, 1, HEADER_SIZE, f);
@@ -144,7 +148,11 @@ int record_file_read(
 	void* output, size_t record_size, int max_records
 ) {
 	FILE* f = fopen(filename, "rb");
-	if (!f) return 0;
+	if (!f) {
+		ESP_LOGE(TAG_RECORD, "Err record_file_read not found: %s", filename);
+		return 0;
+	}
+
 	// Read current header
 	fread(header, 1, HEADER_SIZE, f);
 

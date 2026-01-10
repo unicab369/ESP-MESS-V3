@@ -106,7 +106,8 @@ void sd_test(void) {
 //###################################################
 #define LOG_NODE_COUNT 10
 #define LOG_RECORD_COUNT 300		// 300 seconds of 10 bytes
-#define LOG_WRITE_INTERVAL_SEC 300		// 5 minutes
+// #define LOG_WRITE_INTERVAL_SEC 300		// 5 minutes
+#define LOG_WRITE_INTERVAL_SEC 60
 
 typedef struct {
 	uint32_t timestamp;
@@ -120,9 +121,14 @@ typedef struct {
 	uint32_t last_5minute_update_sec;		// track when the last 5 minute update time
 	uint32_t last_log_rotation_sec;
 	uint32_t last_minute_update_sec;
-	
+
 	uint32_t config;
 	uint8_t rotation;
+	uint8_t curr_year;
+	uint8_t curr_month;
+	uint8_t curr_day;
+
+	char sub_path[8];
 	uint16_t current_idx;
 	record_t records[LOG_RECORD_COUNT];
 } record_aggregate_t;
@@ -156,35 +162,6 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 }
 
 
-static int cache_write_to_file(
-	uint32_t uuid, struct tm *tm, record_t *records, int count
-) {
-	char file_path[ROTATION_LOG_PATH_LEN];
-	int year = tm->tm_year + 1900;
-	int month = tm->tm_mon + 1;
-	int day = tm->tm_mday;
-
-	//# Create UUID directory: /log/<uuid>
-	snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
-	if (!sd_ensure_dir(file_path)) {
-		ESP_LOGE(TAG_SF, "Err cache_write_to_file create /<uuid>");
-		return 0;
-	}
-
-	//# Create year directory: /log/<uuid>/2025
-	snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d", uuid, year);
-	if (!sd_ensure_dir(file_path)) {
-		ESP_LOGE(TAG_SF, "Err cache_write_to_file create /<uuid>/year");
-		return 0;
-	}
-
-	//# Create complete path: /log/<uuid>/2025/MMDD-X.bin
-	snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
-		uuid, year, month, day
-	);
-}
-
-
 static void cache_and_write_record(
 	uint32_t uuid, struct tm *tm, record_t *record
 ) {
@@ -194,7 +171,7 @@ static void cache_and_write_record(
 		uint32_t timestamp = record->timestamp;
 		uint16_t old_idx = target->current_idx;
 
-		// Found existing UUID
+		//# Found existing UUID - update record
 		target->records[old_idx].timestamp = timestamp;
 		target->records[old_idx].value1 = record->value1;
 		target->records[old_idx].value2 = record->value2;
@@ -292,7 +269,56 @@ static void cache_and_write_record(
 		}
 
 		//# Write to file
-		cache_write_to_file(uuid, tm, rec_to_write, rec_idx);
+		const char method_name[] = "cache_write_to_file";
+		char file_path[ROTATION_LOG_PATH_LEN];
+		int year = tm->tm_year - 100;		// get 2 digit year, total_year = tm_year + 1900
+		int month = tm->tm_mon + 1;
+		int day = tm->tm_mday;
+
+		//# Create year path
+		if (target->curr_year != year) {
+			ESP_LOGE(TAG_SF, "*** New Year: %d", year);
+
+			//# Create UUID directory: /log/<uuid>
+			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
+			if (!sd_ensure_dir(file_path)) {
+				ESP_LOGE(TAG_SF, "Err %s create /<uuid>", method_name);
+				continue;
+			}
+
+			//# Create year directory: /log/<uuid>/YY
+			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%02d", uuid, year);
+			if (!sd_ensure_dir(file_path)) {
+				ESP_LOGE(TAG_SF, "Err %s create /<uuid>/year", method_name);
+				continue;
+			}
+
+			// update current year
+			target->curr_year = year;
+		}
+
+		//# Create month and day path
+		if (target->curr_month != month && target->curr_day == day) {
+			ESP_LOGE(TAG_SF, "*** Month: %d Day: %d", month, day);
+
+			// update current month and day
+			target->curr_month = month;
+			target->curr_day = day;		
+		}
+
+		//# Write to complete path: /log/<uuid>/YY/MMDD-X.bin
+		// <uuid>/YY/MMDD-0.bin
+		// <uuid>/YY/MMDD-1.bin
+		// <uuid>/YY/MMDD-2.bin (max 6 hours - 360 records OR minutes)
+		// <uuid>/YY/MMDD-3.bin (Max 4 files per day - total 24 hours)
+		// max 1 minute a record: 10m, 30m, 60m, 3hr=180m, 6hr=360m
+
+		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d.bin", 
+			uuid, year, month, day
+		);
+
+		ESP_LOGW(TAG_SF, "%s Writing to: %s", method_name, file_path);
+		int check = record_file_write(file_path, rec_to_write, sizeof(record_t), rec_idx + 1);
 
 		//# Track the last 5 minute update time
 		target->last_5minute_update_sec = timestamp;
@@ -352,95 +378,6 @@ void append_to_circular_buffer(const char* file_path, const void* data, size_t s
 	}
 }
 
-// static void rotationLog_write(
-// 	uint32_t uuid, uint32_t time_ref, struct tm *tm, record_t* record
-// ) {
-// 	char file_path[ROTATION_LOG_PATH_LEN];
-// 	int year = tm->tm_year + 1900;
-// 	int month = tm->tm_mon + 1;
-// 	int day = tm->tm_mday;
-
-// 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-// 		//! filter for valid uuid and config
-// 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
-// 		if (target->uuid != uuid || target->config == 0) continue;
-
-// 		//# 1. Create UUID directory: /log/<uuid>
-// 		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
-// 		if (!sd_ensure_dir(file_path)) {
-// 			ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>");
-// 			continue;
-// 		}
-
-// 		uint64_t run_time;
-// 		runtime_start(&run_time);
-
-// 		rotation_get_filePath(uuid, 1, file_path);
-// 		append_to_circular_buffer(file_path, record, sizeof(record_t));
-	
-// 		//# 2. Check rotation for latest_<0|1>.bin files - takes about 15ms
-// 		if (target->last_log_rotation_sec == 0 || 
-// 			time_ref - target->last_log_rotation_sec >= BUFFER_DURATION_SEC
-// 		) {
-// 			printf("*** rotationLog_write rotate\n");
-// 			// Time to rotate - switch and write to the OTHER file
-// 			int new_rotation = (target->rotation == 0) ? 1 : 0;
-// 			rotation_get_filePath(uuid, new_rotation, file_path);
-// 			sd_overwrite_bin(file_path, record, sizeof(record_t));
-			
-// 			// Update rotation index to point to the new_rotation
-// 			target->rotation = new_rotation;
-// 			target->last_log_rotation_sec = time_ref;
-// 		}
-// 		else {
-// 			// Append to the current active file
-// 			rotation_get_filePath(uuid, target->rotation, file_path);
-// 			sd_append_bin(file_path, record, sizeof(record_t));
-// 		}
-
-// 		runtime_print("*** rotationLog_write", &run_time);
-
-// 		// Update aggregation (ALWAYS)
-// 		target->count++;
-// 		target->sum1 += record->value1;
-// 		target->sum2 += record->value2;
-// 		target->sum3 += record->value3;
-
-// 		//# 3. Create daily file: /log/<uuid>/2025/1230.bin, stop every 60 seconds
-// 		if (target->last_minute_update_sec == 0 || 
-// 			time_ref - target->last_minute_update_sec >= 60
-// 		) {
-// 			//#Create year directory: /log/<uuid>/2025
-// 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d", uuid, year);
-
-// 			if (!sd_ensure_dir(file_path)) {
-// 				ESP_LOGE(TAG_SF, "Err rotationLog_write create /<uuid>/year");
-// 				continue;
-// 			}
-
-// 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%d/%02d%02d.bin", 
-// 				uuid, year, month, day
-// 			);
-
-// 			record_t minute_avg = {
-// 				.timestamp = record->timestamp,
-// 				.value1 = target->sum1 / target->count,
-// 				.value2 = target->sum2 / target->count,
-// 				.value3 = target->sum3 / target->count
-// 			};
-
-// 			sd_append_bin(file_path, &minute_avg, sizeof(record_t));
-// 			target->last_minute_update_sec = time_ref;
-
-//     		// RESET aggregates
-// 			target->count = 0;
-// 			target->sum1 = 0;
-// 			target->sum2 = 0;
-// 			target->sum3 = 0;
-// 		}
-// 	}
-// }
-
 
 // Config: /log/config.bin
 static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
@@ -461,23 +398,23 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 		}
 	}
 
+	const char method_name[] = "sd_save_config";
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
+
 	if (!f) {
-		ESP_LOGE(TAG_SF, "Err sd_save_config %s", file_path);
+		ESP_LOGE(TAG_SF, "Err %s %s", method_name, file_path);
 		return ESP_FAIL;
 	}
 
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid == 0) continue;
-
 		fprintf(f, "%08lX %ld\n", target->uuid, target->config);
-		printf("saved: %08lX %ld\n", target->uuid, target->config);
 	}
 
 	fclose(f);
-	ESP_LOGW(TAG_SF, "written %s", file_path);
+	ESP_LOGW(TAG_SF, "%s %s uuid %08lX config %ld", method_name, file_path, uuid, config);
 	return ESP_OK;
 }
 

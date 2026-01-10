@@ -244,7 +244,7 @@ void app_main(void) {
 
 					uuid += i;
 					cache_device(uuid, now);
-					cache_and_write_record(uuid, &record);
+					cache_and_write_record(uuid, &timeinfo, &record);
 					
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {

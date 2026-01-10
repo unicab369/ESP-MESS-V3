@@ -286,11 +286,12 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	// Validate parameters
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 	if (uuid < 1) {
+		ESP_LOGE(TAG_HTTP, "Err HTTP_SAVE_CONFIG_HANDLER not found %s", device_id);
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
 
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
-	printf("Saving Config uuid: %08lX, Config: %ld\n", uuid, config);
+	ESP_LOGW(TAG_HTTP, "HTTP_SAVE_CONFIG_HANDLER uuid: %08lX, Config: %ld\n", uuid, config);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
@@ -487,30 +488,37 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev:%s, %d/%02d/%02d, window:%d", 
+	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev:%s, %d/%02d/%02d of %dm", 
 							device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
-
-	// Check if device is valid
-	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+	
 	int found = 0;
-
-	esp_err_t ret;
+	char path_str[64];
+	char buffer[HTTP_CHUNK_SIZE] = {0};
+	esp_err_t ret = ESP_OK;
 	uint64_t start_time;
-	runtime_start(&start_time);
+	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 
 	for (int i=0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid != uuid) continue;
-		found = 1;
-		runtime_print("**** ram read", &start_time);
 
-		runtime_start(&start_time);
-		ret = httpd_resp_send(req, (const char*)target->records, LOG_RECORD_COUNT * RECORD_SIZE);
-		runtime_print("**** httpd_resp_send", &start_time);
+		if (window > 60 && month > 0 && day > 0) {
+			// if window is greater than 59 minutes, get daily log
+			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d.bin",
+					device_id, year%100, month, day);
+			runtime_start(&start_time);
+			send_http_file(req, buffer, path_str);
+			runtime_print("**** HTTP_GET_RECORDS_HANDLER send_http_file", &start_time);
+			printf("*** HTTP_GET_RECORDS_HANDLER path_str %s\n", path_str);
+		} else {
+			// takes about 5ms for 300 records
+			ret = httpd_resp_send(req, (const char*)target->records, LOG_RECORD_COUNT * RECORD_SIZE);
+		}
+		found = 1;
 		return ret;
 	}
 	if (!found) {
@@ -518,9 +526,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		return ESP_OK;
 	}
 
-	// get the path
-	char path_str[64];
-	char buffer[HTTP_CHUNK_SIZE] = {0};
+	// get the pat
 
 	if (window > 60 && month > 0 && day > 0) {
 		// if window is greater than 59 minutes, get daily log
