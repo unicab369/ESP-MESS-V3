@@ -18,7 +18,7 @@ typedef struct __attribute__((packed)) {
 } file_header_t;
 
 #define HEADER_SIZE sizeof(file_header_t)  // 12 bytes
-#define MAX_DATA_SIZE (BLOCK_SIZE - HEADER_SIZE)  // 4084 bytes
+#define MAX_DATA_SIZE (BLOCK_SIZE - HEADER_SIZE)
 
 
 // ============================================================================
