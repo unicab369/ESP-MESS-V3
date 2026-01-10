@@ -101,32 +101,6 @@ void log_diagnostics_handler() {
 }
 
 
-void record_file_parse_debug(const char* filename, size_t record_size) {
-    FILE* f = fopen(filename, "rb");
-    if (!f) {
-        printf("Cannot open file\n");
-        return;
-    }
-    
-    file_header_t header;
-    fread(&header, 1, HEADER_SIZE, f);
-    printf("\n=== DEBUG: All records in %s ===\n", filename);
-    printf("Total records: %d, Next offset: %d\n", header.record_count, header.next_offset);
-    
-    record_t rec;
-    for (int i = 0; i < header.record_count; i++) {
-        size_t pos = HEADER_SIZE + (i * record_size);
-        fseek(f, pos, SEEK_SET);
-        fread(&rec, 1, record_size, f);
-        
-        printf("Record %2d @ offset %3d: timestamp=%ld, values=%d,%d,%d\n",
-				i, pos - HEADER_SIZE, rec.timestamp, 
-				rec.value1, rec.value2, rec.value3);
-    }
-    
-    printf("===============================\n");
-    fclose(f);
-}
 
 void app_main(void) {
 	esp_err_t ret;
@@ -214,7 +188,7 @@ void app_main(void) {
 			record_t first_record;
 			record_t last_record;
 
-			if (record_file_read_last(test_path, &first_record, RECORD_SIZE)) {
+			if (record_file_read_at(0, test_path, &first_record, RECORD_SIZE)) {
 				printf("first_record: %ld %d %d\n", 
 					first_record.timestamp, first_record.value1, first_record.value2);
 			}
@@ -224,15 +198,19 @@ void app_main(void) {
 					last_record.timestamp, last_record.value1, last_record.value2);
 			}
 
+			file_header_t header;
 			static record_t all_records[400];
 			runtime_start(&time_ref);
-			int count = record_file_parse(test_path, all_records, 400, RECORD_SIZE);
+			int count = record_file_read(&header, test_path, all_records, RECORD_SIZE, 400);
 			runtime_print("*** readTime time: ", &time_ref);
-			printf("Read %d records\n", count);
+
+			// for (int i = 0; i < count; i++) {
+			// 	printf("Record %2d: timestamp=%ld, values=%d,%d,%d\n",
+			// 		i, all_records[i].timestamp, 
+			// 		all_records[i].value1, all_records[i].value2, all_records[i].value3);
+			// }
 
 			record_file_status(test_path, RECORD_SIZE);
-
-			record_file_parse_debug(test_path, RECORD_SIZE);
 		}
 	}
 

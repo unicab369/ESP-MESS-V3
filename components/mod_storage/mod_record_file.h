@@ -138,19 +138,55 @@ int record_file_insert(const char* filename, const void *record, size_t record_s
 	return record_file_write(filename, record, record_size, 1);
 }
 
+
+int record_file_read(
+	file_header_t *header, const char* filename,
+	void* output, size_t record_size, int max_records
+) {
+	FILE* f = fopen(filename, "rb");
+	if (!f) return 0;
+	// Read current header
+	fread(header, 1, HEADER_SIZE, f);
+
+	// Validate
+	if (header->magic != HEADER_MAGIC) {
+		fclose(f);
+		return 0;
+	}
+
+	// Determine how many records to read
+	int records_to_read = header->record_count;
+	if (records_to_read > max_records) records_to_read = max_records;
+	
+	if (records_to_read == 0) {
+        fclose(f);
+        return 0;  // No records to read
+    }
+
+	// Skip header and read all records in one go
+	fseek(f, HEADER_SIZE, SEEK_SET);
+	int count = fread(output, record_size, header->record_count, f);
+	fclose(f);
+	return count;
+}
+
 // ============================================================================
 // READ SPECIFIC RECORD
 // ============================================================================
 
-int record_file_read(
-	const char* filename, int record_index, void* output, size_t record_size
+int record_file_read_at(
+	int record_index, const char* filename, void* output, size_t record_size
 ) {
 	FILE* f = fopen(filename, "rb");
-	if (!f) return 0;
+	if (!f) {
+		ESP_LOGE(TAG_RECORD, "Err record_file_read_at not found: %s", filename);
+		return 0;
+	}
 	
 	// Read header
 	file_header_t header;
 	fread(&header, 1, HEADER_SIZE, f);
+
 	// Validate index
 	if (record_index < 0 || record_index >= header.record_count) {
 		fclose(f);
@@ -172,11 +208,15 @@ int record_file_read(
 
 int record_file_read_last(const char* filename, void* output, size_t record_size) {
 	FILE* f = fopen(filename, "rb");
-	if (!f) return 0;
+	if (!f) {
+		ESP_LOGE(TAG_RECORD, "Err record_file_read_last not found: %s", filename);
+		return 0;
+	}
 	
 	// Read header
 	file_header_t header;
 	fread(&header, 1, HEADER_SIZE, f);
+
 	// Check if any records exist
 	if (header.record_count == 0) {
 		fclose(f);
@@ -199,7 +239,7 @@ int record_file_read_last(const char* filename, void* output, size_t record_size
 void record_file_status(const char* filename, size_t record_size) {
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "File not found: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err record_file_status not found: %s", filename);
 		return;
 	}
 	
@@ -214,37 +254,4 @@ void record_file_status(const char* filename, size_t record_size) {
 	printf("Records written: %d, remaining: %d\n",
                 header.record_count, (MAX_DATA_SIZE - next_offset) / record_size);
 	printf("Space used: %d/%d bytes\n", HEADER_SIZE + next_offset, BLOCK_SIZE);
-}
-
-
-// ============================================================================
-// GET ALL RECORDS
-// ============================================================================
-
-// Read ALL records into an array (excluding header)
-int record_file_parse(
-	const char* filename, void* buffer, int max_records, size_t record_size
-) {
-    FILE* f = fopen(filename, "rb");
-    if (!f) return 0;
-    
-    // Read header to know how many records exist
-    file_header_t header;
-    fread(&header, 1, HEADER_SIZE, f);
-    
-    // Validate
-    if (header.magic != HEADER_MAGIC) {
-        fclose(f);
-        return 0;
-    }
-    
-    // Determine how many to read
-    int records_to_read = header.record_count;
-    if (records_to_read > max_records) records_to_read = max_records;
-    
-    // Skip header and read all records in one go
-    fseek(f, HEADER_SIZE, SEEK_SET);
-    int actual_read = fread(buffer, record_size, records_to_read, f);
-    fclose(f);
-    return actual_read;  // Returns number of records read
 }
