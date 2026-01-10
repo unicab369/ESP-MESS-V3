@@ -37,20 +37,20 @@ int record_file_start(const char* filename) {
 		) {
 			// Valid file already exists!
 			fclose(test);
-			ESP_LOGW(TAG_RECORD, "File %s already exists (has %d records)\n", 
+			ESP_LOGW(TAG_RECORD, "record_file_start %s already exists (has %d records)", 
 						filename, existing_header.record_count);
 			return 1;  // Success - file already good
 		}
 		fclose(test);
 		
 		// File exists but is invalid/corrupted
-		ESP_LOGW(TAG_RECORD, "File %s exists but is invalid/corrupted. Recreating...\n", filename);
+		ESP_LOGW(TAG_RECORD, "record_file_start %s is invalid/corrupted. Recreating...", filename);
 	}
 
 	// Create the file
 	FILE* f = fopen(filename, "wb");
 	if (!f) {
-		ESP_LOGW(TAG_RECORD, "Failed to create %s\n", filename);
+		ESP_LOGW(TAG_RECORD, "Failed to create %s", filename);
 		return 0;
 	}
 	
@@ -70,15 +70,19 @@ int record_file_start(const char* filename) {
 	}
 	
 	fclose(f);
-	ESP_LOGW(TAG_RECORD, "Created %s (%d bytes) with header\n", filename, BLOCK_SIZE);
+	ESP_LOGW(TAG_RECORD, "record_file_start Created %s (%d bytes) with header",
+			filename, BLOCK_SIZE);
 	return 1;
 }
 
+
 // ============================================================================
-// WRITE NEXT RECORD
+// WRITE MULTIPLE RECORD
 // ============================================================================
 
-int record_file_insert(const char* filename, const void* data, size_t record_size) {
+int record_file_write(
+	const char* filename, const void *records, size_t record_size, int count
+) {
 	FILE* f = fopen(filename, "rb+");
 	if (!f) return 0;
 	// Read current header
@@ -88,35 +92,51 @@ int record_file_insert(const char* filename, const void* data, size_t record_siz
 	// Validate file
 	if (header.magic != HEADER_MAGIC) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "Invalid format, no matching header identifier!\n");
+		ESP_LOGE(TAG_RECORD, "record_file_write Invalid format - header identifier!");
 		return 0;
 	}
-	
-	// Check if file is full
-	if (header.next_offset + record_size > MAX_DATA_SIZE) {
+
+	// Check capacity
+	size_t total_bytes = record_size * count;
+	if (header.next_offset + total_bytes > MAX_DATA_SIZE) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "File full! %d records written.\n", header.record_count);
+		ESP_LOGE(TAG_RECORD, "record_file_write Not enough space! %d records written.",
+				header.record_count);
 		return 0;
 	}
 	
-	// Calculate exact position for new record & write the data
-	size_t write_pos = HEADER_SIZE + header.next_offset;
-	fseek(f, write_pos, SEEK_SET);
-	fwrite(data, 1, record_size, f);
+	// Write each record
+    size_t write_pos = HEADER_SIZE + header.next_offset;
+    fseek(f, write_pos, SEEK_SET);
+    size_t written = fwrite(records, record_size, count, f);
+    
+    if (written != count) {
+        ESP_LOGE(TAG_RECORD, "record_file_write Partial write: %zu/%d records", written, count);
+        fclose(f);
+        return 0;
+    }
 	
 	// Update header
-	header.next_offset += record_size;
-	header.record_count++;
+    header.next_offset += total_bytes;
+    header.record_count += count;
 	
 	// Write back updated header
 	fseek(f, 0, SEEK_SET);
 	fwrite(&header, 1, HEADER_SIZE, f);
 	fclose(f);
-	ESP_LOGE(TAG_RECORD, "Wrote record %d at offset %d\n", 
-		header.record_count, header.next_offset - record_size);
+	ESP_LOGW(TAG_RECORD, "record_file_write Wrote %d record (current count: %d @ offset %d)", 
+		count, header.record_count, header.next_offset - record_size);
 	return 1;
 }
 
+
+// ============================================================================
+// WRITE NEXT RECORD
+// ============================================================================
+
+int record_file_insert(const char* filename, const void *record, size_t record_size) {
+	return record_file_write(filename, record, record_size, 1);
+}
 
 // ============================================================================
 // READ SPECIFIC RECORD
@@ -179,7 +199,7 @@ int record_file_read_last(const char* filename, void* output, size_t record_size
 void record_file_status(const char* filename, size_t record_size) {
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "File not found: %s\n", filename);
+		ESP_LOGE(TAG_RECORD, "File not found: %s", filename);
 		return;
 	}
 	
@@ -191,12 +211,11 @@ void record_file_status(const char* filename, size_t record_size) {
 	ESP_LOGW(TAG_RECORD, "File status for %s", filename);
 	printf("Magic: 0x%08lX %s\n", header.magic, 
 				header.magic == HEADER_MAGIC ? "(OK)" : "(CORRUPT!)");
-	printf("Space used: %d/%d bytes\n", 
-				HEADER_SIZE + next_offset, BLOCK_SIZE);
 	printf("Records written: %d, remaining: %d\n",
-                header.record_count,
-				(MAX_DATA_SIZE - next_offset) / record_size);
+                header.record_count, (MAX_DATA_SIZE - next_offset) / record_size);
+	printf("Space used: %d/%d bytes\n", HEADER_SIZE + next_offset, BLOCK_SIZE);
 }
+
 
 // ============================================================================
 // GET ALL RECORDS
@@ -221,15 +240,11 @@ int record_file_parse(
     
     // Determine how many to read
     int records_to_read = header.record_count;
-    if (records_to_read > max_records) {
-        records_to_read = max_records;
-    }
+    if (records_to_read > max_records) records_to_read = max_records;
     
     // Skip header and read all records in one go
     fseek(f, HEADER_SIZE, SEEK_SET);
     int actual_read = fread(buffer, record_size, records_to_read, f);
-    
     fclose(f);
     return actual_read;  // Returns number of records read
 }
-
