@@ -320,10 +320,9 @@ async function reload_records(chart_id) {
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				}
 				records.push(rec)
-				// console.log("t_val", time_value)
 				// const target = records[i]
-				// console.log(`Record ${i}: Time=${target.time}, Temp=${target.temp}`)
-				// // console.log(`Record ${i}: Time=${new Date(target.time*1000).toLocaleString()}, Temp=${target.temp}`)
+				console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
+				// console.log(`Record ${i}: Time=${new Date(rec.time*1000).toLocaleString()}, Temp=${rec.temp}`)
 			}
 
 			console.log(`count: ${records.length}/${recordCount} @${time_dif_ms}ms, last: ${records.at(-1).time}`)

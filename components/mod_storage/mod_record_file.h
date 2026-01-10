@@ -26,8 +26,12 @@ typedef struct __attribute__((packed)) {
 // ============================================================================
 
 int record_file_start(const char* filename) {
+	const char method_name[] = "record_file_start";
+
 	// First check if file already exists and is valid
-	FILE* test = fopen(filename, "rb");
+	uint64_t timestamp;
+	FILE* test = fopen(filename, "rb");			// ~7.5ms
+
 	if (test) {
 		// File exists - check if it's already a valid fixed file
 		file_header_t existing_header;
@@ -37,20 +41,21 @@ int record_file_start(const char* filename) {
 		) {
 			// Valid file already exists!
 			fclose(test);
-			ESP_LOGW(TAG_RECORD, "record_file_start %s already exists (has %d records)", 
-						filename, existing_header.record_count);
+			ESP_LOGW(TAG_RECORD, "%s %s already exists (has %d records)", 
+						method_name, filename, existing_header.record_count);
 			return 1;  // Success - file already good
 		}
 		fclose(test);
 		
 		// File exists but is invalid/corrupted
-		ESP_LOGW(TAG_RECORD, "record_file_start %s is invalid/corrupted. Recreating...", filename);
+		ESP_LOGW(TAG_RECORD, "%s %s is invalid/corrupted. Recreating...",
+				method_name, filename);
 	}
 
 	// Create the file
 	FILE* f = fopen(filename, "wb");
 	if (!f) {
-		ESP_LOGW(TAG_RECORD, "Failed to create %s", filename);
+		ESP_LOGW(TAG_RECORD, "%s Failed to create %s", method_name, filename);
 		return 0;
 	}
 	
@@ -70,8 +75,7 @@ int record_file_start(const char* filename) {
 	}
 	
 	fclose(f);
-	ESP_LOGW(TAG_RECORD, "record_file_start Created %s (%d bytes) with header",
-			filename, BLOCK_SIZE);
+	ESP_LOGW(TAG_RECORD, "%s Created %s (%d bytes)", method_name, filename, BLOCK_SIZE);
 	return 1;
 }
 
@@ -83,20 +87,23 @@ int record_file_start(const char* filename) {
 int record_file_write(
 	const char* filename, const void *records, size_t record_size, int count
 ) {
-	FILE* f = fopen(filename, "rb+");
+	const char method_name[] = "record_file_write";
+	uint64_t timestamp;
+	FILE* f = fopen(filename, "rb+");			// ~6.0ms
+
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err record_file_write can't open: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err %s Not Found: %s", method_name, filename);
 		return 0;
 	}
 
 	// Read current header
 	file_header_t header;
-	fread(&header, 1, HEADER_SIZE, f);
-	
+	fread(&header, 1, HEADER_SIZE, f);		// ~1.5ms
+
 	// Validate file
 	if (header.magic != HEADER_MAGIC) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "record_file_write Invalid format - header identifier!");
+		ESP_LOGE(TAG_RECORD, "Err %s Invalid format - header identifier!", method_name);
 		return 0;
 	}
 
@@ -104,18 +111,19 @@ int record_file_write(
 	size_t total_bytes = record_size * count;
 	if (header.next_offset + total_bytes > MAX_DATA_SIZE) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "record_file_write Not enough space! %d records written.",
-				header.record_count);
+		ESP_LOGE(TAG_RECORD, "%s Not enough space! %d records written.",
+				method_name, header.record_count);
 		return 0;
 	}
 	
 	// Write each record
     size_t write_pos = HEADER_SIZE + header.next_offset;
-    fseek(f, write_pos, SEEK_SET);
-    size_t written = fwrite(records, record_size, count, f);
-    
+    fseek(f, write_pos, SEEK_SET);								// ~200us
+    size_t written = fwrite(records, record_size, count, f);	// ~75us
+
     if (written != count) {
-        ESP_LOGE(TAG_RECORD, "record_file_write Partial write: %zu/%d records", written, count);
+        ESP_LOGE(TAG_RECORD, "%s Partial write: %zu/%d records",
+				method_name, written, count);
         fclose(f);
         return 0;
     }
@@ -125,11 +133,11 @@ int record_file_write(
     header.record_count += count;
 	
 	// Write back updated header
-	fseek(f, 0, SEEK_SET);
-	fwrite(&header, 1, HEADER_SIZE, f);
+	fseek(f, 0, SEEK_SET);						// ~150us
+	fwrite(&header, 1, HEADER_SIZE, f);			// ~30us
 	fclose(f);
-	ESP_LOGW(TAG_RECORD, "record_file_write Wrote %d record (current count: %d @ offset %d)", 
-		count, header.record_count, header.next_offset - record_size);
+	ESP_LOGW(TAG_RECORD, "%s %d record (current count: %d @offset %d)", 
+			method_name, count, header.record_count, header.next_offset - record_size);
 	return 1;
 }
 
@@ -147,9 +155,10 @@ int record_file_read(
 	file_header_t *header, const char* filename,
 	void* output, size_t record_size, int max_records
 ) {
+	const char method_name[] = "record_file_read";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err record_file_read not found: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
 		return 0;
 	}
 
@@ -185,9 +194,10 @@ int record_file_read(
 int record_file_read_at(
 	int record_index, const char* filename, void* output, size_t record_size
 ) {
+	const char method_name[] = "record_file_read_at";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err record_file_read_at not found: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
 		return 0;
 	}
 	
@@ -215,9 +225,10 @@ int record_file_read_at(
 // ============================================================================
 
 int record_file_read_last(const char* filename, void* output, size_t record_size) {
+	const char method_name[] = "record_file_read_last";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err record_file_read_last not found: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
 		return 0;
 	}
 	
@@ -245,9 +256,10 @@ int record_file_read_last(const char* filename, void* output, size_t record_size
 // ============================================================================
 
 void record_file_status(const char* filename, size_t record_size) {
+	const char method_name[] = "record_file_status";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err record_file_status not found: %s", filename);
+		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
 		return;
 	}
 	

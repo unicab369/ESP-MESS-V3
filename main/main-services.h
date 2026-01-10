@@ -1,13 +1,17 @@
 #include "mod_wifi.h"
 #include "WIFI_CRED.h"
 
-void runtime_start(uint64_t *timestamp) {
+void elapse_start(uint64_t *timestamp) {
 	*timestamp = esp_timer_get_time();
 }
 
-void runtime_print(const char *prefix, uint64_t *timestamp) {
-	uint64_t elapsed = esp_timer_get_time() - *timestamp;
-	printf("%s Runtime: %lld us\n", prefix, elapsed);
+uint64_t elapse_stop(uint64_t *timestamp) {
+	return esp_timer_get_time() - *timestamp;
+}
+
+void elapse_print(const char *prefix, uint64_t *timestamp) {
+	uint64_t elapsed = elapse_stop(timestamp);
+	printf("%s elapsed: %lld us\n", prefix, elapsed);
 }
 
 #include "mod_littlefs_log.h"
@@ -307,13 +311,13 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access
-esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path) {
+esp_err_t http_send_file_chunk(httpd_req_t *req, void *buffer, const char *path) {
 	if (!FS_ACCESS_START(req)) return ESP_OK;
+	const char method_name[] = "http_send_file_chunk";
+	FILE* file = fopen(path, "rb");			// ~7.0ms
 
-	// takes about 7ms to open a file, 2ms to read a chunk
-	FILE* file = fopen(path, "rb");
 	if (file == NULL) {
-		ESP_LOGE(TAG_HTTP, "Err send_http_file open %s", path);
+		ESP_LOGE(TAG_HTTP, "Err %s Not Found %s", method_name, path);
 		FS_ACCESS_RELEASE();	//# FS RELEASE
 		return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
 	}
@@ -322,21 +326,22 @@ esp_err_t send_http_file(httpd_req_t *req, char *buffer, const char *path) {
 	size_t bytes_read;
 	size_t total_bytes = 0;
 	uint64_t start_time;
-	runtime_start(&start_time);
+
+	elapse_start(&start_time);
 
 	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
-		esp_err_t err = httpd_resp_send_chunk(req, buffer, bytes_read);
-		if (err != ESP_OK) {
-			ESP_LOGE(TAG_HTTP, "Err send_http_file sending chunk %d", err);
+		esp_err_t ret = httpd_resp_send_chunk(req, buffer, bytes_read);
+		if (ret != ESP_OK) {
+			ESP_LOGE(TAG_HTTP, "Err %s httpd_resp_send_chunk", method_name);
 			fclose(file);
 			FS_ACCESS_RELEASE();	//# FS RELEASE
-			return err;
+			return ret;
 		}
 		total_bytes += bytes_read;
 	}
 
-	ESP_LOGW(TAG_HTTP, "send_http_file %s %dB", path, total_bytes);
-	runtime_print("sd read time", &start_time);
+	ESP_LOGW(TAG_HTTP, "%s sent: %s %dB in %lldus",
+		method_name, path, total_bytes, elapse_stop(&start_time));
 	fclose(file);
 	FS_ACCESS_RELEASE();	//# FS RELEASE
 
@@ -358,6 +363,7 @@ int send_record_file(
 
 	size_t bytes_read;
 	size_t total_bytes = 0;
+	const char method_name[] = "send_record_file";
 
 	// takes about 7ms to open a file, 3ms to read a chunk
 	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
@@ -369,7 +375,7 @@ int send_record_file(
 
 		// Send entire chunk
 		if (httpd_resp_send_chunk(req, buffer, bytes_read) != ESP_OK) {
-			ESP_LOGE(TAG_HTTP, "Err send_http_file sending_chunk");
+			ESP_LOGE(TAG_HTTP, "Err %s sending_chunk", method_name);
 			fclose(file);
 			FS_ACCESS_RELEASE();
 			return 0;
@@ -417,7 +423,7 @@ int get_n_records(
 	size_t current_record = 0;
 
 	uint64_t start_time;
-	runtime_start(&start_time);
+	elapse_start(&start_time);
 
 	while (records_collected < n_records) {
 		size_t bytes_read = fread(read_buffer, 1, HTTP_CHUNK_SIZE, file);
@@ -441,7 +447,7 @@ int get_n_records(
 	FS_ACCESS_RELEASE();
 	printf("**** records_collected %d\n", records_collected);
 	
-	runtime_print("*** sd readtime", &start_time);
+	elapse_print("*** sd readtime", &start_time);
 	return records_collected * RECORD_SIZE;
 }
 
@@ -450,6 +456,8 @@ int get_n_records(
 // /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B (1Hz = 1800 points)
 // /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
 // /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
+
+static record_t read_back2[400] = {0};
 
 // fs_access - internal
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
@@ -488,8 +496,9 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	ESP_LOGI(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER dev:%s, %d/%02d/%02d of %dm", 
-							device_id, year, month, day, window);
+	const char method_name[] = "GET_RECORDS_HANDLER";
+	ESP_LOGI(TAG_HTTP, "%s dev:%s %d/%02d/%02d of %dm", 
+							method_name, device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
@@ -497,7 +506,8 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	
 	int found = 0;
 	char path_str[64];
-	char buffer[HTTP_CHUNK_SIZE] = {0};
+	char buffer[512];
+
 	esp_err_t ret = ESP_OK;
 	uint64_t start_time;
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
@@ -510,10 +520,16 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 			// if window is greater than 59 minutes, get daily log
 			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d.bin",
 					device_id, year%100, month, day);
-			runtime_start(&start_time);
-			send_http_file(req, buffer, path_str);
-			runtime_print("**** HTTP_GET_RECORDS_HANDLER send_http_file", &start_time);
-			printf("*** HTTP_GET_RECORDS_HANDLER path_str %s\n", path_str);
+
+			elapse_start(&start_time);
+			file_header_t header;
+			record_file_read(&header, path_str, read_back2, RECORD_SIZE, 400);
+			elapse_print("**** record_file_read", &start_time);
+
+			// http_send_file_chunk(req, CHUNK_BUFFER, path_str);
+			// return httpd_resp_send_chunk(req, NULL, 0);
+
+			return httpd_resp_send(req, (const char*)read_back2, sizeof(read_back2));
 		} else {
 			// takes about 5ms for 300 records
 			ret = httpd_resp_send(req, (const char*)target->records, LOG_RECORD_COUNT * RECORD_SIZE);
@@ -526,32 +542,20 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		return ESP_OK;
 	}
 
-	// get the pat
 
-	if (window > 60 && month > 0 && day > 0) {
-		// if window is greater than 59 minutes, get daily log
-		snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%d/%02d%02d.bin", device_id, year, month, day);
-		send_http_file(req, buffer, path_str);
-	}
-	else {
-		// uint64_t start_time;
-		// runtime_start(&start_time);
 
-		// else get newest logs
-		rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
-		//int len = send_record_file(req, buffer, path_str, 1767888434);
-		int len = send_record_file(req, buffer, path_str, 0);		// 95ms
+	// // else get newest logs
+	// rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
+	// //int len = send_record_file(req, buffer, path_str, 1767888434);
+	// int len = send_record_file(req, buffer, path_str, 0);		// 95ms
 
-		// memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
-		// int len = get_n_records(req, path_str, buffer, CUSTOM_BUFFER, 100);
-		// httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
+	// // memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
+	// // int len = get_n_records(req, path_str, buffer, CUSTOM_BUFFER, 100);
+	// // httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
+	// ESP_LOGW(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER %s %dB", path_str, len);
 
-		runtime_print("HTTP_GET_RECORDS_HANDLER", &start_time);
-		ESP_LOGW(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER %s %dB", path_str, len);
-
-		// rotation_get_filePath(uuid, 0, path_str);			// get new_0.bin
-		// return send_http_file(req, buffer, path_str, 1);
-	}
+	// // rotation_get_filePath(uuid, 0, path_str);			// get new_0.bin
+	// // return http_send_file_chunk(req, buffer, path_str, 1);
 
 	return httpd_resp_send_chunk(req, NULL, 0);
 }
@@ -576,7 +580,7 @@ esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 	ESP_LOGW(TAG_HTTP, "path %s", path);
 
 	char buffer[1024];
-	send_http_file(req, buffer, path);
+	http_send_file_chunk(req, buffer, path);
 	return httpd_resp_send_chunk(req, NULL, 0);
 }
 
@@ -781,7 +785,7 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	char full_path[64];
 	char buffer[1024];
 	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
-	send_http_file(req, buffer, full_path);
+	http_send_file_chunk(req, buffer, full_path);
 
 	return httpd_resp_send_chunk(req, NULL, 0);
 }

@@ -107,7 +107,7 @@ void sd_test(void) {
 #define LOG_NODE_COUNT 10
 #define LOG_RECORD_COUNT 300		// 300 seconds of 10 bytes
 // #define LOG_WRITE_INTERVAL_SEC 300		// 5 minutes
-#define LOG_WRITE_INTERVAL_SEC 60
+#define LOG_WRITE_INTERVAL_SEC 300
 
 typedef struct {
 	uint32_t timestamp;
@@ -318,7 +318,23 @@ static void cache_and_write_record(
 		);
 
 		ESP_LOGW(TAG_SF, "%s Writing to: %s", method_name, file_path);
+		record_file_start(file_path);
 		int check = record_file_write(file_path, rec_to_write, sizeof(record_t), rec_idx + 1);
+
+		for (int i = 0; i < rec_idx + 1; i++) {
+			ESP_LOGE(TAG_SF, "Wrote: %ld %d %d",
+				rec_to_write[i].timestamp, rec_to_write[i].value1, rec_to_write[i].value2);
+		}
+
+		static record_t read_back[400] = {0};
+		file_header_t header;
+		int count = record_file_read(&header, file_path, read_back, sizeof(record_t), 400);
+		printf("*** Read %d records", count);
+
+		for (int i = 0; i < count; i++) {
+			ESP_LOGE(TAG_SF, "Read: %ld %d %d",
+				read_back[i].timestamp, read_back[i].value1, read_back[i].value2);
+		}
 
 		//# Track the last 5 minute update time
 		target->last_5minute_update_sec = timestamp;
@@ -326,7 +342,6 @@ static void cache_and_write_record(
 		break;  // Done
 	}
 }
-
 
 
 // /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A (1Hz = 1800 points)

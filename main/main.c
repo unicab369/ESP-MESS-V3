@@ -200,9 +200,9 @@ void app_main(void) {
 
 			file_header_t header;
 			static record_t all_records[400];
-			runtime_start(&time_ref);
+			elapse_start(&time_ref);
 			int count = record_file_read(&header, test_path, all_records, RECORD_SIZE, 400);
-			runtime_print("*** readTime time: ", &time_ref);
+			elapse_print("*** readTime time: ", &time_ref);
 
 			// for (int i = 0; i < count; i++) {
 			// 	printf("Record %2d: timestamp=%ld, values=%d,%d,%d\n",
