@@ -490,7 +490,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	ESP_LOGI(TAG_HTTP, "%s dev:%s %d/%02d/%02d of %dm", 
+	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV %s %d/%02d/%02d of %dm", 
 							method_name, device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -511,7 +511,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 
 		if (window > 60 && month > 0 && day > 0) {
 			// if window is greater than 59 minutes, get daily log
-			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d.bin",
+			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d-0.bin",
 					device_id, year%100, month, day);
 
 			file_header_t header;

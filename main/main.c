@@ -153,64 +153,6 @@ void app_main(void) {
 			}
 
 			sd_load_config();
-
-			uint64_t time_ref;
-			const char *test_path = "/sdcard/log/data.bin";
-			record_file_start(test_path);
-
-			record_t rec = {
-				.timestamp = 222,
-				.value1 = 1,
-				.value2 = 2,
-				.value3 = 3,
-			};
-
-			record_file_insert(test_path, &rec, RECORD_SIZE);
-			record_file_insert(test_path, &rec, RECORD_SIZE);
-
-			record_t recs [2] = {
-				{
-					.timestamp = 333,
-					.value1 = 22,
-					.value2 = 33,
-					.value3 = 44,
-				},
-				{
-					.timestamp = 444,
-					.value1 = 55,
-					.value2 = 66,
-					.value3 = 77,
-				},
-			};
-
-			record_file_batch_insert(test_path, recs, RECORD_SIZE, 2);
-
-			record_t first_record;
-			record_t last_record;
-
-			if (record_file_read_at(0, test_path, &first_record, RECORD_SIZE)) {
-				printf("first_record: %ld %d %d\n", 
-					first_record.timestamp, first_record.value1, first_record.value2);
-			}
-
-			if (record_file_read_last(test_path, &last_record, RECORD_SIZE)) {
-				printf("last_record: %ld %d %d\n", 
-					last_record.timestamp, last_record.value1, last_record.value2);
-			}
-
-			file_header_t header;
-			static record_t all_records[400];
-			elapse_start(&time_ref);
-			int count = record_file_read(&header, test_path, all_records, RECORD_SIZE, 400);
-			elapse_print("*** readTime time: ", &time_ref);
-
-			// for (int i = 0; i < count; i++) {
-			// 	printf("Record %2d: timestamp=%ld, values=%d,%d,%d\n",
-			// 		i, all_records[i].timestamp, 
-			// 		all_records[i].value1, all_records[i].value2, all_records[i].value3);
-			// }
-
-			record_file_status(test_path, RECORD_SIZE);
 		}
 	}
 

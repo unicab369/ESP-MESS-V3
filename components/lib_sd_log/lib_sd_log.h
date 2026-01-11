@@ -9,6 +9,25 @@
 #define SD_POINT "/sdcard"
 static const char *TAG_SF = "#FS";
 
+// Color macros
+#define COLOR_RESET   "\033[0m"
+#define COLOR_RED     "\033[31m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_MAGENTA "\033[35m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_WHITE   "\033[37m"
+#define COLOR_BOLD    "\033[1m"
+
+// Logging macros with colors
+#define LOG_INFO(fmt, ...)  printf(COLOR_CYAN "I " COLOR_RESET fmt "\n", ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  printf(COLOR_YELLOW "W " COLOR_RESET fmt "\n", ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) printf(COLOR_RED "E " COLOR_RESET fmt "\n", ##__VA_ARGS__)
+#define LOG_SUCCESS(fmt, ...) printf(COLOR_GREEN "S " COLOR_RESET fmt "\n", ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) printf(COLOR_MAGENTA "D " COLOR_RESET fmt "\n", ##__VA_ARGS__)
+
+
 esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin);
 
 int sd_remove_dir_recursive(const char* path);

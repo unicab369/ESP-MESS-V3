@@ -2,7 +2,7 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 
-#define BLOCK_SIZE 4096
+#define RECORD_FILE_BLOCK_SIZE 4096
 #define HEADER_MAGIC 0xCACABABE // File identifier
 
 static const char *TAG_RECORD = "#REC";
@@ -11,21 +11,22 @@ static const char *TAG_RECORD = "#REC";
 // HEADER STRUCTURE (stored at file start)
 // ============================================================================
 typedef struct __attribute__((packed)) {
-	uint32_t magic;          // Always 0xCACABABE
+	uint32_t magic;          // header identifier
 	uint16_t next_offset;    // Where to write next (0-4086)
 	uint16_t record_count;   // How many records written
-	uint32_t checksum;       // Optional: for data integrity
+	uint32_t start_time;     // Unix timestamp of the first record
+	uint32_t end_time;       // Unix timestamp of the latest record
 } file_header_t;
 
 #define HEADER_SIZE sizeof(file_header_t)  // 12 bytes
-#define MAX_DATA_SIZE (BLOCK_SIZE - HEADER_SIZE)
+#define MAX_DATA_SIZE (RECORD_FILE_BLOCK_SIZE - HEADER_SIZE)
 
 
 // ============================================================================
 // CREATE/INITIALIZE FILE
 // ============================================================================
 
-int record_file_start(const char* filename) {
+int record_file_start(const char* filename, file_header_t *header) {
 	const char method_name[] = "record_file_start";
 
 	// First check if file already exists and is valid
@@ -34,48 +35,45 @@ int record_file_start(const char* filename) {
 
 	if (test) {
 		// File exists - check if it's already a valid fixed file
-		file_header_t existing_header;
-
-		if (fread(&existing_header, 1, HEADER_SIZE, test) == HEADER_SIZE &&
-			existing_header.magic == HEADER_MAGIC
+		if (fread(header, 1, HEADER_SIZE, test) == HEADER_SIZE &&
+			header->magic == HEADER_MAGIC
 		) {
 			// Valid file already exists!
 			fclose(test);
-			ESP_LOGW(TAG_RECORD, "%s %s already exists (has %d records)", 
-						method_name, filename, existing_header.record_count);
+			ESP_LOGW(TAG_RECORD, "%s RECORD-FOUND", method_name);
+			printf("%s (has %drecs, next_offset %d)\n", 
+					filename, header->record_count, header->next_offset);
 			return 1;  // Success - file already good
 		}
 		fclose(test);
 		
 		// File exists but is invalid/corrupted
-		ESP_LOGW(TAG_RECORD, "%s %s is invalid/corrupted. Recreating...",
-				method_name, filename);
+		ESP_LOGW(TAG_RECORD, "%s INVALID-FOUND %s. Recreating...", method_name, filename);
 	}
 
 	// Create the file
 	FILE* f = fopen(filename, "wb");
 	if (!f) {
-		ESP_LOGW(TAG_RECORD, "%s Failed to create %s", method_name, filename);
+		ESP_LOGW(TAG_RECORD, "%s CANNOT-CREATE %s", method_name, filename);
 		return 0;
 	}
 	
 	// Write header
-	file_header_t header = {
-		.magic = HEADER_MAGIC,
-		.next_offset = 0,
-		.record_count = 0,
-		.checksum = 0
-	};
-	fwrite(&header, 1, HEADER_SIZE, f);
+	header->magic = HEADER_MAGIC;
+	header->next_offset = 0;
+	header->record_count = 0;
+	fwrite(header, 1, HEADER_SIZE, f);
 	
 	// Fill rest with zeros (pre-allocate)
 	uint8_t zero = 0;
-	for (int i = HEADER_SIZE; i < BLOCK_SIZE; i++) {
+	for (int i = HEADER_SIZE; i < RECORD_FILE_BLOCK_SIZE; i++) {
 		fwrite(&zero, 1, 1, f);
 	}
 	
 	fclose(f);
-	ESP_LOGW(TAG_RECORD, "%s Created %s (%d bytes)", method_name, filename, BLOCK_SIZE);
+	ESP_LOGW(TAG_RECORD, "%s LOG-CREATED", method_name);
+	printf("%s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
+
 	return 1;
 }
 
@@ -83,16 +81,18 @@ int record_file_start(const char* filename) {
 // ============================================================================
 // WRITE MULTIPLE RECORD
 // ============================================================================
+// assume at least one record is always inserted
 
-int record_file_batch_insert(
+int record_batch_insert(
 	const char* filename, const void *records, size_t record_size, int count
 ) {
-	const char method_name[] = "record_file_batch_insert";
+	const char method_name[] = "record_batch_insert";
 	uint64_t timestamp;
 	FILE* f = fopen(filename, "rb+");			// ~6.0ms
 
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s Not Found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("File not found: %s\n", filename);
 		return 0;
 	}
 
@@ -103,7 +103,7 @@ int record_file_batch_insert(
 	// Validate file
 	if (header.magic != HEADER_MAGIC) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "Err %s Invalid format - header identifier!", method_name);
+		ESP_LOGE(TAG_RECORD, "%s INVALID-FORMAT header identifier.", method_name);
 		return 0;
 	}
 
@@ -111,34 +111,39 @@ int record_file_batch_insert(
 	size_t total_bytes = record_size * count;
 	if (header.next_offset + total_bytes > MAX_DATA_SIZE) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "%s Not enough space! %d records written.",
+		ESP_LOGE(TAG_RECORD, "%s INSUFFICIENT-SPACE %d records written.",
 				method_name, header.record_count);
 		return 0;
 	}
 	
 	// Write each record
-    size_t write_pos = HEADER_SIZE + header.next_offset;
-    fseek(f, write_pos, SEEK_SET);								// ~200us
-    size_t written = fwrite(records, record_size, count, f);	// ~75us
+	size_t write_pos = HEADER_SIZE + header.next_offset;
+	fseek(f, write_pos, SEEK_SET);								// ~200us
+	size_t written = fwrite(records, record_size, count, f);	// ~75us
 
-    if (written != count) {
-        ESP_LOGE(TAG_RECORD, "%s Partial write: %zu/%d records",
-				method_name, written, count);
+	if (written == 0) {
+        // Complete failure
         fclose(f);
+        ESP_LOGE(TAG_RECORD, "%s WRITE-FAILED 0/%d records written",
+                method_name, count);
         return 0;
     }
-	
+
 	// Update header
-    header.next_offset += total_bytes;
-    header.record_count += count;
+    size_t actual_bytes = written * record_size;
+    header.next_offset += actual_bytes;
+    header.record_count += (uint32_t)written;
 	
 	// Write back updated header
 	fseek(f, 0, SEEK_SET);						// ~150us
 	fwrite(&header, 1, HEADER_SIZE, f);			// ~30us
 	fclose(f);
-	ESP_LOGW(TAG_RECORD, "%s %d record (current count: %d @offset %d)", 
-			method_name, count, header.record_count, header.next_offset - record_size);
-	return 1;
+
+	ESP_LOGW(TAG_RECORD, "%s INSERT-RECORD", method_name);
+	printf("Inserted %d/%d records (total %d, next_offset %d)\n",
+			written, count, header.record_count, header.next_offset);
+
+	return header.next_offset;
 }
 
 
@@ -147,7 +152,7 @@ int record_file_batch_insert(
 // ============================================================================
 
 int record_file_insert(const char* filename, const void *record, size_t record_size) {
-	return record_file_batch_insert(filename, record, record_size, 1);
+	return record_batch_insert(filename, record, record_size, 1);
 }
 
 
@@ -273,5 +278,5 @@ void record_file_status(const char* filename, size_t record_size) {
 				header.magic == HEADER_MAGIC ? "(OK)" : "(CORRUPT!)");
 	printf("Records written: %d, remaining: %d\n",
                 header.record_count, (MAX_DATA_SIZE - next_offset) / record_size);
-	printf("Space used: %d/%d bytes\n", HEADER_SIZE + next_offset, BLOCK_SIZE);
+	printf("Space used: %d/%d bytes\n", HEADER_SIZE + next_offset, RECORD_FILE_BLOCK_SIZE);
 }
