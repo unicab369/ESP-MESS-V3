@@ -490,7 +490,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV %s %d/%02d/%02d of %dm", 
+	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV %s %d/%02d/%02d range %dm", 
 							method_name, device_id, year, month, day, window);
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -501,11 +501,11 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	char path_str[64];
 
 	esp_err_t ret = ESP_OK;
-	uint64_t start_time;
+	uint64_t time_ref;
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 
 	for (int i=0; i < LOG_NODE_COUNT; i++) {
-		record_aggregate_t *target = &RECORD_AGGREGATE[i];
+		records_store_t *target = &RECORDS_STORES[i];
 		if (target->uuid != uuid) continue;
 		found = 1;
 
@@ -515,14 +515,15 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 					device_id, year%100, month, day);
 
 			file_header_t header;
-			elapse_start(&start_time);
+			elapse_start(&time_ref);
 			int len = record_file_read(&header, path_str, HTTP_FILE_BUFFER, RECORD_SIZE, 400);	// ~10ms
 			ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
-			elapse_print("**** httpd_resp_send", &start_time);
+			elapse_print("**** httpd_resp_send", &time_ref);
+			printf("*** startTime: %ld, latestTime: %d\n", header.start_time, header.latest_time);
 
-			// elapse_start(&start_time);
+			// elapse_start(&time_ref);
 			// http_send_record_chunks(req, path_str, buffer);				// ~25ms YUCK
-			// elapse_print("**** http_send_record_chunks", &start_time);
+			// elapse_print("**** http_send_record_chunks", &time_ref);
 			break;
 		} else {
 			// takes about 5ms for 300 records

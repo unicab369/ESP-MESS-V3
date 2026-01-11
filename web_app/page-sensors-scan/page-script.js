@@ -128,7 +128,7 @@ function showLog(index) {
 	let startTime = Date.now()
 
 	service_getDeviceLog(target.uuid, (result)=>{
-		const RECORD_SIZE = 10
+		const RECORD_SIZE = 12
 		const recordCount = Math.floor(result.byteLength / RECORD_SIZE)
 		const dataView = new DataView(result)
 		console.log('Response time:', Date.now() - startTime, 'ms')
@@ -137,9 +137,10 @@ function showLog(index) {
 		let timestamp = 0
 		for (let i = 0; i < recordCount; i++) {
 			timestamp = dataView.getUint32(i * RECORD_SIZE, true)
-			const value = dataView.getUint16(i * RECORD_SIZE + 4, true)
+			const value1 = dataView.getUint16(i * RECORD_SIZE + 4, true)
 			const value2 = dataView.getUint16(i * RECORD_SIZE + 6, true)
 			const value3 = dataView.getUint16(i * RECORD_SIZE + 8, true)
+			const value4 = dataView.getUint16(i * RECORD_SIZE + 10, true)
 		}
 
 		console.log("last Timestamp", timestamp)

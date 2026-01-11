@@ -11,11 +11,11 @@ static const char *TAG_RECORD = "#REC";
 // HEADER STRUCTURE (stored at file start)
 // ============================================================================
 typedef struct __attribute__((packed)) {
-	uint32_t magic;          // header identifier
-	uint16_t next_offset;    // Where to write next (0-4086)
-	uint16_t record_count;   // How many records written
-	uint32_t start_time;     // Unix timestamp of the first record
-	uint32_t end_time;       // Unix timestamp of the latest record
+	uint32_t magic;         	// header identifier
+	uint16_t next_offset;   	// Where to write next (0-4086)
+	uint16_t record_count;  	// How many records written
+	uint32_t start_time;    	// Unix timestamp of the first record
+	uint32_t latest_time;		// Unix timestamp of the latest record
 } file_header_t;
 
 #define HEADER_SIZE sizeof(file_header_t)  // 12 bytes
@@ -30,7 +30,6 @@ int record_file_start(const char* filename, file_header_t *header) {
 	const char method_name[] = "record_file_start";
 
 	// First check if file already exists and is valid
-	uint64_t timestamp;
 	FILE* test = fopen(filename, "rb");			// ~7.5ms
 
 	if (test) {
@@ -84,10 +83,10 @@ int record_file_start(const char* filename, file_header_t *header) {
 // assume at least one record is always inserted
 
 int record_batch_insert(
-	const char* filename, const void *records, size_t record_size, int count
+	const char* filename, file_header_t *output_header,
+	const void *records, size_t record_size, int count
 ) {
 	const char method_name[] = "record_batch_insert";
-	uint64_t timestamp;
 	FILE* f = fopen(filename, "rb+");			// ~6.0ms
 
 	if (!f) {
@@ -103,7 +102,7 @@ int record_batch_insert(
 	// Validate file
 	if (header.magic != HEADER_MAGIC) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "%s INVALID-FORMAT header identifier.", method_name);
+		ESP_LOGE(TAG_RECORD, "%s INVALID-HEADER", method_name);
 		return 0;
 	}
 
@@ -133,7 +132,9 @@ int record_batch_insert(
     size_t actual_bytes = written * record_size;
     header.next_offset += actual_bytes;
     header.record_count += (uint32_t)written;
-	
+	header.latest_time = output_header->latest_time;
+	*output_header = header;
+
 	// Write back updated header
 	fseek(f, 0, SEEK_SET);						// ~150us
 	fwrite(&header, 1, HEADER_SIZE, f);			// ~30us
@@ -144,15 +145,6 @@ int record_batch_insert(
 			written, count, header.record_count, header.next_offset);
 
 	return header.next_offset;
-}
-
-
-// ============================================================================
-// WRITE NEXT RECORD
-// ============================================================================
-
-int record_file_insert(const char* filename, const void *record, size_t record_size) {
-	return record_batch_insert(filename, record, record_size, 1);
 }
 
 
@@ -167,11 +159,11 @@ int record_file_read(
 		return 0;
 	}
 
-	// Read current header
+	// Read and validate current header
 	fread(header, 1, HEADER_SIZE, f);
 
-	// Validate
 	if (header->magic != HEADER_MAGIC) {
+		ESP_LOGE(TAG_RECORD, "%s INVALID-HEADER", method_name);
 		fclose(f);
 		return 0;
 	}

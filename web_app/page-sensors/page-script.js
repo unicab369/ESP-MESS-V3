@@ -300,7 +300,7 @@ async function reload_records(chart_id) {
 			}
 
 			const buffer = await resp.arrayBuffer()
-			const RECORD_SIZE = 10
+			const RECORD_SIZE = 12
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
 			
@@ -317,7 +317,8 @@ async function reload_records(chart_id) {
 					time: time_value,
 					temp: dataView.getUint16(i * RECORD_SIZE + 4, true),
 					hum: dataView.getInt16(i * RECORD_SIZE + 6, true),
-					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
+					lux: dataView.getUint16(i * RECORD_SIZE + 8, true),
+					extra: dataView.getUint16(i * RECORD_SIZE + 10, true)
 				}
 				records.push(rec)
 				// console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
