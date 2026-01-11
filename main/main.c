@@ -10,7 +10,7 @@
 
 #include "main-services.h"
 
-#define MAIN_TASK_INTERVAL_US 2000000	// 2 seconds
+#define MAIN_TASK_INTERVAL_US 2 * 1000000	// 2 seconds
 #define LED_PIN 22
 #define MODE_PIN 12
 
@@ -183,7 +183,7 @@ void app_main(void) {
 				},
 			};
 
-			record_file_write(test_path, recs, RECORD_SIZE, 2);
+			record_file_batch_insert(test_path, recs, RECORD_SIZE, 2);
 
 			record_t first_record;
 			record_t last_record;
@@ -244,7 +244,11 @@ void app_main(void) {
 
 					uuid += i;
 					cache_device(uuid, now);
-					cache_and_write_record(uuid, &timeinfo, &record);
+					int year = timeinfo.tm_year - 100;// get 2 digit year, total_year = tm_year + 1900
+					int month = timeinfo.tm_mon + 1;
+					int day = timeinfo.tm_mday;
+					
+					cache_and_write_record(uuid, &record, year, month, day);
 					
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {

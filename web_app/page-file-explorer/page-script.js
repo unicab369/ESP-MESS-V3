@@ -118,6 +118,9 @@ function onUpdateNVS(old_namespace, old_key) {
 	})
 }
 
+
+//# reloadEntry
+
 function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 	if (sub_entry.length > 0)  {
 		if (restart) {

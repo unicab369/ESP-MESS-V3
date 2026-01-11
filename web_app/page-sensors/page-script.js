@@ -320,12 +320,11 @@ async function reload_records(chart_id) {
 					lux: dataView.getUint16(i * RECORD_SIZE + 8, true)
 				}
 				records.push(rec)
-				// const target = records[i]
-				console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
+				// console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
 				// console.log(`Record ${i}: Time=${new Date(rec.time*1000).toLocaleString()}, Temp=${rec.temp}`)
 			}
 
-			console.log(`count: ${records.length}/${recordCount} @${time_dif_ms}ms, last: ${records.at(-1).time}`)
+			console.log(`count: ${records.length}/${recordCount} @${time_dif_ms}ms, last: ${records.at(-1)?.time}`)
 
 			//# Sort by time - uPlot requires ascending order
 			records.sort((a, b) => a.time - b.time);

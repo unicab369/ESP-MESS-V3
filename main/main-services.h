@@ -22,8 +22,8 @@ void elapse_print(const char *prefix, uint64_t *timestamp) {
 #include "../components/analytics.h"
 
 #define RECORD_SIZE sizeof(record_t)				// 10 bytes
-#define HTTP_CHUNK_SIZE 1020		//! NOTE chunk_size need to be multiple of RECORD_SIZE
-static char CUSTOM_BUFFER[HTTP_CHUNK_SIZE];
+#define HTTP_CHUNK_SIZE 2048
+static char HTTP_FILE_BUFFER[HTTP_CHUNK_SIZE];
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
 // design: mutex on read and queue on write to SD card
@@ -275,6 +275,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
 
+	const char method_name[] = "HTTP_SAVE_CONFIG_HANDLER";
 	char device_id[9] = {0};
 	char config_str[16] = {0};
 
@@ -290,12 +291,12 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	// Validate parameters
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 	if (uuid < 1) {
-		ESP_LOGE(TAG_HTTP, "Err HTTP_SAVE_CONFIG_HANDLER not found %s", device_id);
+		ESP_LOGE(TAG_HTTP, "Err %s Invalid device %s", method_name, device_id);
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
 
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
-	ESP_LOGW(TAG_HTTP, "HTTP_SAVE_CONFIG_HANDLER uuid: %08lX, Config: %ld\n", uuid, config);
+	ESP_LOGW(TAG_HTTP, "%s uuid: %08lX, Config: %ld", method_name, uuid, config);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
@@ -311,9 +312,9 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access
-esp_err_t http_send_file_chunk(httpd_req_t *req, void *buffer, const char *path) {
+esp_err_t http_send_file_chunks(httpd_req_t *req, void *buffer, const char *path) {
 	if (!FS_ACCESS_START(req)) return ESP_OK;
-	const char method_name[] = "http_send_file_chunk";
+	const char method_name[] = "http_send_file_chunks";
 	FILE* file = fopen(path, "rb");			// ~7.0ms
 
 	if (file == NULL) {
@@ -348,14 +349,13 @@ esp_err_t http_send_file_chunk(httpd_req_t *req, void *buffer, const char *path)
 	return ESP_OK;
 }
 
-int send_record_file(
-	httpd_req_t *req, char *buffer, char *path, uint32_t min_timestamp
-) {
+int http_send_record_chunks(httpd_req_t *req, char *path, char *buffer) {
 	if (!FS_ACCESS_START(req)) return 0;
+	const char method_name[] = "http_send_record_chunks";
+	FILE* file = fopen(path, "rb");		// ~7.0ms
 
-	FILE* file = fopen(path, "rb");
 	if (!file) {
-		ESP_LOGE(TAG_HTTP, "Err send_record_file open %s", path);
+		ESP_LOGE(TAG_HTTP, "Err %s Not Found %s", method_name, path);
 		FS_ACCESS_RELEASE();
 		httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
 		return 0;
@@ -363,15 +363,14 @@ int send_record_file(
 
 	size_t bytes_read;
 	size_t total_bytes = 0;
-	const char method_name[] = "send_record_file";
+	file_header_t header;
+	// Skip header ~ 1.8ms fseek and fread takes about the same time
+	fread(&header, 1, HEADER_SIZE, file);
 
-	// takes about 7ms to open a file, 3ms to read a chunk
+	// ~3ms to read a chunk
 	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
-		// Check first record if filtering
-		if (min_timestamp > 0) {
-			uint32_t f_timestamp = *(uint32_t*)buffer;
-			if (f_timestamp == 0 || f_timestamp < min_timestamp) break;
-		}
+		// uint32_t f_timestamp = *(uint32_t*)buffer;
+        // printf("*** f_timestamp: %ld\n", f_timestamp);
 
 		// Send entire chunk
 		if (httpd_resp_send_chunk(req, buffer, bytes_read) != ESP_OK) {
@@ -452,15 +451,9 @@ int get_n_records(
 }
 
 
-// /log/<uuid>/new_0.bin - 1 second records with 30 minutes rotation A (1Hz = 1800 points)
-// /log/<uuid>/new_1.bin - 1 second records with 30 minutes rotation B (1Hz = 1800 points)
-// /log/<uuid>/2025/1230.bin - 1 minute records of 24 hours (1/min = 1440 points OR 60 per hour)
-// /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
-
-static record_t read_back2[400] = {0};
-
 // fs_access - internal
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
+	const char method_name[] = "GET_RECORDS_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
@@ -485,6 +478,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		httpd_query_key_value(query, "mth", month_str, sizeof(month_str));
 		httpd_query_key_value(query, "day", day_str, sizeof(day_str));
 		httpd_query_key_value(query, "win", window_str, sizeof(window_str));
+		
 		window = atoi(window_str);
 		year = atoi(year_str);
 		month = atoi(month_str);
@@ -496,7 +490,6 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	const char method_name[] = "GET_RECORDS_HANDLER";
 	ESP_LOGI(TAG_HTTP, "%s dev:%s %d/%02d/%02d of %dm", 
 							method_name, device_id, year, month, day, window);
 	// Validate parameters
@@ -506,7 +499,6 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	
 	int found = 0;
 	char path_str[64];
-	char buffer[512];
 
 	esp_err_t ret = ESP_OK;
 	uint64_t start_time;
@@ -515,54 +507,39 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	for (int i=0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid != uuid) continue;
+		found = 1;
 
 		if (window > 60 && month > 0 && day > 0) {
 			// if window is greater than 59 minutes, get daily log
 			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d.bin",
 					device_id, year%100, month, day);
 
-			elapse_start(&start_time);
 			file_header_t header;
-			record_file_read(&header, path_str, read_back2, RECORD_SIZE, 400);
-			elapse_print("**** record_file_read", &start_time);
+			elapse_start(&start_time);
+			int len = record_file_read(&header, path_str, HTTP_FILE_BUFFER, RECORD_SIZE, 400);	// ~10ms
+			ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
+			elapse_print("**** httpd_resp_send", &start_time);
 
-			// http_send_file_chunk(req, CHUNK_BUFFER, path_str);
-			// return httpd_resp_send_chunk(req, NULL, 0);
-
-			return httpd_resp_send(req, (const char*)read_back2, sizeof(read_back2));
+			// elapse_start(&start_time);
+			// http_send_record_chunks(req, path_str, buffer);				// ~25ms YUCK
+			// elapse_print("**** http_send_record_chunks", &start_time);
+			break;
 		} else {
 			// takes about 5ms for 300 records
-			ret = httpd_resp_send(req, (const char*)target->records, LOG_RECORD_COUNT * RECORD_SIZE);
+			return httpd_resp_send(req, (const char*)target->records, sizeof(target->records));
 		}
-		found = 1;
-		return ret;
+		break;;
 	}
 	if (!found) {
-		httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Record not registered");
-		return ESP_OK;
+		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Record not registered");
 	}
-
-
-
-	// // else get newest logs
-	// rotation_get_filePath(uuid, 1, path_str);			// get new_1.bin
-	// //int len = send_record_file(req, buffer, path_str, 1767888434);
-	// int len = send_record_file(req, buffer, path_str, 0);		// 95ms
-
-	// // memset(CUSTOM_BUFFER, 0, sizeof(CUSTOM_BUFFER));
-	// // int len = get_n_records(req, path_str, buffer, CUSTOM_BUFFER, 100);
-	// // httpd_resp_send_chunk(req, CUSTOM_BUFFER, len);					// 55ms
-	// ESP_LOGW(TAG_HTTP, "HTTP_GET_RECORDS_HANDLER %s %dB", path_str, len);
-
-	// // rotation_get_filePath(uuid, 0, path_str);			// get new_0.bin
-	// // return http_send_file_chunk(req, buffer, path_str, 1);
 
 	return httpd_resp_send_chunk(req, NULL, 0);
 }
 
-
 // fs_access -internal
 esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
+	const char method_name[] = "HTTP_GET_FILE_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
 
@@ -577,10 +554,9 @@ esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 	}
 
 	for (char *p = path; *p; p++) if (*p == '*') *p = '/';
-	ESP_LOGW(TAG_HTTP, "path %s", path);
+	ESP_LOGW(TAG_HTTP, "%s send path %s", method_name, path);
 
-	char buffer[1024];
-	http_send_file_chunk(req, buffer, path);
+	http_send_file_chunks(req, HTTP_FILE_BUFFER, path);
 	return httpd_resp_send_chunk(req, NULL, 0);
 }
 
@@ -699,14 +675,16 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 
 // fs_access
 esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
+	const char method_name[] = "HTTP_GET_ENTRIES_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
+	ESP_LOGI(TAG_HTTP, "%s", method_name);
 
 	char query[128];
 	char entry_str[64] = {0};
 	char txt_str[4] = {0};
 	char bin_str[4] = {0};
-	char output[1024] = {0};
+	char output[512] = {0};
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -785,7 +763,7 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	char full_path[64];
 	char buffer[1024];
 	snprintf(full_path, sizeof(full_path), SD_POINT"/log/%s/%s/%s", pa_str, pb_str, pc_str);
-	http_send_file_chunk(req, buffer, full_path);
+	http_send_file_chunks(req, buffer, full_path);
 
 	return httpd_resp_send_chunk(req, NULL, 0);
 }

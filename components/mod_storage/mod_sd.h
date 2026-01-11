@@ -105,9 +105,10 @@ void sd_test(void) {
 
 //###################################################
 #define LOG_NODE_COUNT 10
-#define LOG_RECORD_COUNT 300		// 300 seconds of 10 bytes
-// #define LOG_WRITE_INTERVAL_SEC 300		// 5 minutes
-#define LOG_WRITE_INTERVAL_SEC 300
+#define RECORD_BUFFER_LEN 300			// 300 seconds of 10 bytes
+// #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
+#define AGGREGATE_INTERVAL_SEC 20			// 5 minutes
+#define AGGREGATE_SAMPLE_COUNT 5
 
 typedef struct {
 	uint32_t timestamp;
@@ -118,19 +119,16 @@ typedef struct {
 
 typedef struct {
 	uint32_t uuid;
-	uint32_t last_5minute_update_sec;		// track when the last 5 minute update time
-	uint32_t last_log_rotation_sec;
-	uint32_t last_minute_update_sec;
-
 	uint32_t config;
-	uint8_t rotation;
+	uint32_t last_aggregate_sec;		// track when the last 5 minute update time
+
 	uint8_t curr_year;
 	uint8_t curr_month;
 	uint8_t curr_day;
 
-	char sub_path[8];
-	uint16_t current_idx;
-	record_t records[LOG_RECORD_COUNT];
+	uint16_t last_aggregate_count;
+	uint16_t record_idx;
+	record_t records[RECORD_BUFFER_LEN];
 } record_aggregate_t;
 
 typedef struct {
@@ -162,123 +160,96 @@ static void cache_device(uint32_t uuid, uint32_t time_ref) {
 }
 
 
-static void cache_and_write_record(
-	uint32_t uuid, struct tm *tm, record_t *record
+static void aggregate_records(
+	record_aggregate_t *target, record_t *rec_to_write, int sample_count
 ) {
+	// empty records
+	memset(rec_to_write, 0, sizeof(rec_to_write[0]) * sample_count);
+
+	// aggregate the records from the current record_idx backward by the aggregated count
+	// start_idx + aggregate_count = current record_idx
+	const int total = target->last_aggregate_count;
+	const int records_per_sample = total / sample_count;
+	const int extra = total % sample_count;
+
+	// start index wrap-around
+	int start_idx = target->record_idx - total;
+	if (start_idx < 0) start_idx += RECORD_BUFFER_LEN;
+
+	uint64_t sum_timestamp = 0;
+	uint64_t sum_value1 = 0;
+	uint64_t sum_value2 = 0;
+	uint64_t sum_value3 = 0;
+	int count = 0;
+	int sample_idx = 0;
+
+	// Distribute extra samples: If there are 8 records over 5 sample_count
+	// distribute the extra 3 records accross the first 3 samples
+	int target_sample_size = records_per_sample;
+	if (sample_idx < extra) target_sample_size++;
+
+	for (int i = 0; i < total; i++) {
+		int idx = start_idx + i;
+		if (idx >= RECORD_BUFFER_LEN) idx -= RECORD_BUFFER_LEN;
+		
+		sum_timestamp += target->records[idx].timestamp;
+		sum_value1 += target->records[idx].value1;
+		sum_value2 += target->records[idx].value2;
+		sum_value3 += target->records[idx].value3;
+		count++;
+		
+		if (count >= target_sample_size) {
+			rec_to_write[sample_idx++].timestamp = sum_timestamp / count;
+			rec_to_write[sample_idx].value1 = sum_value1 / count;
+			rec_to_write[sample_idx].value2 = sum_value2 / count;
+			rec_to_write[sample_idx].value3 = sum_value3 / count;
+
+			// Update for next sample
+			sum_timestamp = sum_value1 = sum_value2 = sum_value3 = count = 0;
+
+			if (sample_idx < sample_count) {
+				target_sample_size = records_per_sample;
+				// Distribute extra samples accross the first samples
+				if (sample_idx < extra) target_sample_size++;
+			}
+		}
+	}
+}
+
+static void cache_and_write_record(
+	uint32_t uuid, record_t *record, int year, int month, int day
+) {
+	char method_name[] = "cache_and_write_record";
+
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
 		if (target->uuid != uuid) continue;
 		uint32_t timestamp = record->timestamp;
-		uint16_t old_idx = target->current_idx;
+		uint16_t idx = target->record_idx;
 
 		//# Found existing UUID - update record
-		target->records[old_idx].timestamp = timestamp;
-		target->records[old_idx].value1 = record->value1;
-		target->records[old_idx].value2 = record->value2;
-		target->records[old_idx].value3 = record->value3;
-		target->current_idx = (old_idx + 1) % LOG_RECORD_COUNT;
+		target->records[idx].timestamp = timestamp;
+		target->records[idx].value1 = record->value1;
+		target->records[idx].value2 = record->value2;
+		target->records[idx].value3 = record->value3;
+		target->record_idx = (idx + 1) % RECORD_BUFFER_LEN;
+		target->last_aggregate_count++;
 
 		//# First time: reference for the 5 minute update time 
-		if (target->last_5minute_update_sec == 0) {
-			target->last_5minute_update_sec = timestamp;
+		if (target->last_aggregate_sec == 0) {
+			target->last_aggregate_sec = timestamp;
 			break;
 		}
 
 		//# Check if 5 minutes have passed
-		if (timestamp - target->last_5minute_update_sec < LOG_WRITE_INTERVAL_SEC) {
+		if (timestamp - target->last_aggregate_sec < AGGREGATE_INTERVAL_SEC) {
 			break;
 		}
 
-		// On 5 minute interval, aggregate the data into 5 equal parts and get 
-		// the average of their values. If there are 300 records, this translates to
-		// 60 records per minute OR aggregate of every 1 minute
-		uint64_t sum_timestamp = 0;
-		uint64_t sum_value1 = 0;
-		uint64_t sum_value2 = 0;
-		uint64_t sum_value3 = 0;
-
-		int records_per_minute = LOG_RECORD_COUNT/5;
-		int aggregate_count = 0;
-		record_t rec_to_write[5] = {0};
-		int rec_idx = 0;
-
-		//# Phase 1: from old_idx to end
-		for (int i = old_idx; i < LOG_RECORD_COUNT; i++) {
-			uint32_t tstamp = target->records[i].timestamp;
-			if (tstamp < 1) continue;
-
-			// Add to sum
-			sum_timestamp += tstamp;
-			sum_value1 += target->records[i].value1;
-			sum_value2 += target->records[i].value2;
-			sum_value3 += target->records[i].value3;
-			aggregate_count++;
-
-			// Aggregate the data
-			if (aggregate_count >= records_per_minute) {
-				rec_to_write[rec_idx].timestamp = sum_timestamp/aggregate_count;
-				rec_to_write[rec_idx].value1 = sum_value1/aggregate_count;
-				rec_to_write[rec_idx].value2 = sum_value2/aggregate_count;
-				rec_to_write[rec_idx].value3 = sum_value3/aggregate_count;
-				rec_idx++;
-				aggregate_count = 0;
-
-				// Reset for next aggregate
-				sum_timestamp = 0;
-				sum_value1 = 0;
-				sum_value2 = 0;
-				sum_value3 = 0;
-			}
-		}
-
-		//# Phase 2: from 0 to old_idx
-		for (int i = 0; i < old_idx; i++) {
-			uint32_t tstamp = target->records[i].timestamp;
-			if (tstamp < 1) continue;
-
-			// Add to sum
-			sum_timestamp += tstamp;
-			sum_value1 += target->records[i].value1;
-			sum_value2 += target->records[i].value2;
-			sum_value3 += target->records[i].value3;
-			aggregate_count++;
-
-			// Aggregate the data
-			if (aggregate_count >= records_per_minute) {
-				rec_to_write[rec_idx].timestamp = sum_timestamp/aggregate_count;
-				rec_to_write[rec_idx].value1 = sum_value1/aggregate_count;
-				rec_to_write[rec_idx].value2 = sum_value2/aggregate_count;
-				rec_to_write[rec_idx].value3 = sum_value3/aggregate_count;
-				rec_idx++;
-				aggregate_count = 0;
-
-				// Reset for next aggregate
-				sum_timestamp = 0;
-				sum_value1 = 0;
-				sum_value2 = 0;
-				sum_value3 = 0;
-			}
-		}
-
-		//# Handle any leftover partial aggregate
-		if (aggregate_count > 0 && rec_idx < 5) {
-			rec_to_write[rec_idx].timestamp = sum_timestamp / aggregate_count;
-			rec_to_write[rec_idx].value1 = sum_value1 / aggregate_count;
-			rec_to_write[rec_idx].value2 = sum_value2 / aggregate_count;
-			rec_to_write[rec_idx].value3 = sum_value3 / aggregate_count;
-		}
-
-		//# Write to file
-		const char method_name[] = "cache_write_to_file";
+		//# Prepare file
 		char file_path[ROTATION_LOG_PATH_LEN];
-		int year = tm->tm_year - 100;		// get 2 digit year, total_year = tm_year + 1900
-		int month = tm->tm_mon + 1;
-		int day = tm->tm_mday;
 
-		//# Create year path
 		if (target->curr_year != year) {
-			ESP_LOGE(TAG_SF, "*** New Year: %d", year);
-
 			//# Create UUID directory: /log/<uuid>
 			snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX", uuid);
 			if (!sd_ensure_dir(file_path)) {
@@ -296,6 +267,16 @@ static void cache_and_write_record(
 			// update current year
 			target->curr_year = year;
 		}
+		
+		//# build the complete path: /log/<uuid>/YY/MMDD-X.bin
+		// <uuid>/YY/MMDD-0.bin
+		// <uuid>/YY/MMDD-1.bin
+		// <uuid>/YY/MMDD-2.bin (max 6 hours - 360 records OR minutes)
+		// <uuid>/YY/MMDD-3.bin (Max 4 files per day - total 24 hours)
+		// max 1 minute a record: 10m, 30m, 60m, 3hr=180m, 6hr=360m
+		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d.bin", 
+			uuid, year, month, day
+		);
 
 		//# Create month and day path
 		if (target->curr_month != month && target->curr_day == day) {
@@ -303,41 +284,49 @@ static void cache_and_write_record(
 
 			// update current month and day
 			target->curr_month = month;
-			target->curr_day = day;		
+			target->curr_day = day;
+
+			// prepare the file
+			record_file_start(file_path);
 		}
 
-		//# Write to complete path: /log/<uuid>/YY/MMDD-X.bin
-		// <uuid>/YY/MMDD-0.bin
-		// <uuid>/YY/MMDD-1.bin
-		// <uuid>/YY/MMDD-2.bin (max 6 hours - 360 records OR minutes)
-		// <uuid>/YY/MMDD-3.bin (Max 4 files per day - total 24 hours)
-		// max 1 minute a record: 10m, 30m, 60m, 3hr=180m, 6hr=360m
+		//# Aggregate records
+		record_t rec_to_write[AGGREGATE_SAMPLE_COUNT];
+		aggregate_records(target, rec_to_write, AGGREGATE_SAMPLE_COUNT);
 
-		snprintf(file_path, ROTATION_LOG_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d.bin", 
-			uuid, year, month, day
-		);
+		ESP_LOGE(TAG_SF, "Writing %d records to %s", AGGREGATE_SAMPLE_COUNT, file_path);
+		printf("*** total aggregate count: %d\n", target->last_aggregate_count);
 
-		ESP_LOGW(TAG_SF, "%s Writing to: %s", method_name, file_path);
-		record_file_start(file_path);
-		int check = record_file_write(file_path, rec_to_write, sizeof(record_t), rec_idx + 1);
+		for (int i = 0; i < AGGREGATE_SAMPLE_COUNT; i++) {
+			printf("[%d] timestamp: %ld\n", i, rec_to_write[i].timestamp);
+		}
 
-		for (int i = 0; i < rec_idx + 1; i++) {
-			ESP_LOGE(TAG_SF, "Wrote: %ld %d %d",
-				rec_to_write[i].timestamp, rec_to_write[i].value1, rec_to_write[i].value2);
+		//# Write to the file
+		int check = record_file_batch_insert(file_path, rec_to_write, sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
+
+		if (!check) {
+			// prepare the file
+			record_file_start(file_path);
+
+			check = record_file_batch_insert(file_path, rec_to_write, sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
+			if (!check) {
+				ESP_LOGE(TAG_SF, "Err %s Failed to write %s", method_name, file_path);
+			}
 		}
 
 		static record_t read_back[400] = {0};
 		file_header_t header;
-		int count = record_file_read(&header, file_path, read_back, sizeof(record_t), 400);
-		printf("*** Read %d records", count);
+		int read_count = record_file_read(&header, file_path, read_back, sizeof(record_t), 400);
+		printf("*** %s Read %d records\n", method_name, read_count);
 
-		for (int i = 0; i < count; i++) {
+		for (int i = 0; i < read_count; i++) {
 			ESP_LOGE(TAG_SF, "Read: %ld %d %d",
 				read_back[i].timestamp, read_back[i].value1, read_back[i].value2);
 		}
 
 		//# Track the last 5 minute update time
-		target->last_5minute_update_sec = timestamp;
+		target->last_aggregate_sec = timestamp;
+		target->last_aggregate_count = 0;
 
 		break;  // Done
 	}
@@ -350,8 +339,6 @@ static void cache_and_write_record(
 // /log/<uuid>/2025/12.bin - 10 minutes records of 30 days(1/10min = 4320 records OR 144 per day)
 
 #define BUFFER_DURATION_SEC 1800  // 30 minutes
-
-
 #define FILE_SIZE (10*1800)		// 1800 records 10 bytes each
 
 static void rotation_get_filePath(uint32_t device_id, int target, char *file_path) {
@@ -396,6 +383,8 @@ void append_to_circular_buffer(const char* file_path, const void* data, size_t s
 
 // Config: /log/config.bin
 static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
+	const char method_name[] = "sd_save_config";
+
 	// need 2 passes
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		record_aggregate_t *target = &RECORD_AGGREGATE[i];
@@ -413,7 +402,6 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 		}
 	}
 
-	const char method_name[] = "sd_save_config";
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "w");	 // overwrite - create if doesn't exit
 
@@ -461,7 +449,7 @@ static esp_err_t sd_load_config() {
 		record_aggregate_t *target = &RECORD_AGGREGATE[loaded];
 		target->uuid = uuid;
 		target->config = config;
-		memset(target->records, 0, sizeof(record_t) * LOG_RECORD_COUNT);
+		memset(target->records, 0, sizeof(target->records));
 		loaded++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
 	}

@@ -84,10 +84,10 @@ int record_file_start(const char* filename) {
 // WRITE MULTIPLE RECORD
 // ============================================================================
 
-int record_file_write(
+int record_file_batch_insert(
 	const char* filename, const void *records, size_t record_size, int count
 ) {
-	const char method_name[] = "record_file_write";
+	const char method_name[] = "record_file_batch_insert";
 	uint64_t timestamp;
 	FILE* f = fopen(filename, "rb+");			// ~6.0ms
 
@@ -147,7 +147,7 @@ int record_file_write(
 // ============================================================================
 
 int record_file_insert(const char* filename, const void *record, size_t record_size) {
-	return record_file_write(filename, record, record_size, 1);
+	return record_file_batch_insert(filename, record, record_size, 1);
 }
 
 
@@ -158,7 +158,7 @@ int record_file_read(
 	const char method_name[] = "record_file_read";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "Err %s Not Found: %s", method_name, filename);
 		return 0;
 	}
 
