@@ -166,6 +166,13 @@ static void aggregate_records(
 	// empty records
 	memset(rec_to_write, 0, sizeof(rec_to_write[0]) * sample_count);
 
+	ESP_LOGE(TAG_SF, "Targetrecords");
+	for (int i = 0; i < target->last_aggregate_count; i++) {
+		record_t *rec = &target->records[i];
+		printf("[%d] %ld, %d\n", i, rec->timestamp, rec->value1);
+	}
+
+
 	// aggregate the records from the current record_idx backward by the aggregated count
 	// start_idx + aggregate_count = current record_idx
 	const int total = target->last_aggregate_count;
@@ -173,6 +180,7 @@ static void aggregate_records(
 	const int extra = total % sample_count;
 
 	// start index wrap-around
+	// -1 because this method get called after the record_idx has been incremented for the next record
 	int start_idx = target->record_idx - total;
 	if (start_idx < 0) start_idx += RECORD_BUFFER_LEN;
 
@@ -190,6 +198,7 @@ static void aggregate_records(
 
 	for (int i = 0; i < total; i++) {
 		int idx = start_idx + i;
+		// handle wrap-around
 		if (idx >= RECORD_BUFFER_LEN) idx -= RECORD_BUFFER_LEN;
 		
 		sum_timestamp += target->records[idx].timestamp;
@@ -199,10 +208,11 @@ static void aggregate_records(
 		count++;
 		
 		if (count >= target_sample_size) {
-			rec_to_write[sample_idx++].timestamp = sum_timestamp / count;
+			rec_to_write[sample_idx].timestamp = sum_timestamp / count;
 			rec_to_write[sample_idx].value1 = sum_value1 / count;
 			rec_to_write[sample_idx].value2 = sum_value2 / count;
 			rec_to_write[sample_idx].value3 = sum_value3 / count;
+			sample_idx++;
 
 			// Update for next sample
 			sum_timestamp = sum_value1 = sum_value2 = sum_value3 = count = 0;
@@ -298,7 +308,7 @@ static void cache_and_write_record(
 		printf("*** total aggregate count: %d\n", target->last_aggregate_count);
 
 		for (int i = 0; i < AGGREGATE_SAMPLE_COUNT; i++) {
-			printf("[%d] timestamp: %ld\n", i, rec_to_write[i].timestamp);
+			printf("[%d] timestamp: %ld, value1: %d\n", i, rec_to_write[i].timestamp, rec_to_write[i].value1);
 		}
 
 		//# Write to the file
