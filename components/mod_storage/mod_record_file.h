@@ -71,7 +71,7 @@ int record_file_start(const char* filename, file_header_t *header) {
 	
 	fclose(f);
 	ESP_LOGW(TAG_RECORD, "%s LOG-CREATED", method_name);
-	printf("%s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
+	printf("File created: %s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
 
 	return 1;
 }
@@ -141,7 +141,7 @@ int record_batch_insert(
 	fclose(f);
 
 	ESP_LOGW(TAG_RECORD, "%s INSERT-RECORD", method_name);
-	printf("Inserted %d/%d records (total %d, next_offset %d)\n",
+	printf("Inserted Completed: %d/%d records (total %d, next_offset %d)\n",
 			written, count, header.record_count, header.next_offset);
 
 	return header.next_offset;

@@ -190,7 +190,7 @@ void app_main(void) {
 					int month = timeinfo.tm_mon + 1;
 					int day = timeinfo.tm_mday;
 					
-					cache_and_write_record(uuid, &record, year, month, day);
+					cache_n_write_record(uuid, &record, year, month, day);
 					
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {

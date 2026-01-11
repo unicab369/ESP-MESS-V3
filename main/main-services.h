@@ -22,7 +22,7 @@ void elapse_print(const char *prefix, uint64_t *timestamp) {
 #include "../components/analytics.h"
 
 #define RECORD_SIZE sizeof(record_t)				// 10 bytes
-#define HTTP_CHUNK_SIZE 2048
+#define HTTP_CHUNK_SIZE 4096
 static char HTTP_FILE_BUFFER[HTTP_CHUNK_SIZE];
 
 // why: use mutex to prevent simultaneous access to sd card from logging and http requests
@@ -498,7 +498,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	}
 	
 	int found = 0;
-	char path_str[64];
+	char file_path[64];
 
 	esp_err_t ret = ESP_OK;
 	uint64_t time_ref;
@@ -511,18 +511,22 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 
 		if (window > 60 && month > 0 && day > 0) {
 			// if window is greater than 59 minutes, get daily log
-			snprintf(path_str, sizeof(path_str), SD_POINT"/log/%s/%02d/%02d%02d-0.bin",
-					device_id, year%100, month, day);
+			make_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
+			ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name); printf("at %s\n", file_path);
 
 			file_header_t header;
+
+			if (!FS_ACCESS_START(req)) break;
 			elapse_start(&time_ref);
-			int len = record_file_read(&header, path_str, HTTP_FILE_BUFFER, RECORD_SIZE, 400);	// ~10ms
+			int len = record_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+			FS_ACCESS_RELEASE();
+
 			ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
-			elapse_print("**** httpd_resp_send", &time_ref);
-			printf("*** startTime: %ld, latestTime: %d\n", header.start_time, header.latest_time);
+			elapse_print("*** httpd_resp_send", &time_ref);
+			printf("*** startTime: %ld, latestTime: %ld\n", header.start_time, header.latest_time);
 
 			// elapse_start(&time_ref);
-			// http_send_record_chunks(req, path_str, buffer);				// ~25ms YUCK
+			// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
 			// elapse_print("**** http_send_record_chunks", &time_ref);
 			break;
 		} else {
