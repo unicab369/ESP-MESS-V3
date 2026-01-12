@@ -123,7 +123,7 @@ typedef struct {
 	uint32_t uuid;
 	uint32_t config;
 	uint32_t last_aggregate_sec;	// track when the last aggregate happened
-	uint32_t last_timestamp;
+	uint32_t last_timestamp;		// last timestamp recorded
 	file_header_t header;
 	
 	uint8_t file_index;				// the file index for aggregated data
@@ -142,8 +142,22 @@ typedef struct {
 } device_cache_t;
 
 static records_store_t RECORDS_STORES[LOG_NODE_COUNT] = {0};
+static uint32_t UUIDS_ARRAY[LOG_NODE_COUNT] = {0};
 static device_cache_t DEVICE_CACHE[LOG_NODE_COUNT] = {0};
 
+static int find_uuid_index(uint32_t uuid) {
+	for (int i = 0; i < LOG_NODE_COUNT; i++) {
+		if (UUIDS_ARRAY[i] == uuid) return i;
+	}
+	return -1;
+}
+
+static records_store_t *find_records_store(uint32_t uuid) {
+    for (int i = 0; i < LOG_NODE_COUNT; i++) {
+        if (UUIDS_ARRAY[i] == uuid) return &RECORDS_STORES[i];
+    }
+    return NULL;
+}
 
 static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
@@ -278,8 +292,8 @@ static int prepare_aggregate_file(
 			target_file_idx = i;
 		}
 
-		if (target_file_idx >= AGGREGATE_MAX_FILE_COUNT - 1) {
-			ESP_LOGE(TAG_SF, "%s MAX-FILES reached %d", method_name, target_file_idx);
+		if (target_file_idx >= AGGREGATE_MAX_FILE_COUNT) {
+			ESP_LOGE(TAG_SF, "%s MAX-FILES reached: %d", method_name, target_file_idx);
 			return 0;
 		}
 
@@ -309,19 +323,12 @@ static void cache_n_write_record(
 	uint32_t uuid, record_t *record, int year, int month, int day
 ) {
 	char method_name[] = "cache_n_write_record";
-	records_store_t *target = NULL;
-
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		records_store_t *store = &RECORDS_STORES[i];
-		if (store->uuid != uuid) continue;
-		target = store;
-		break;
-	}
-
+	records_store_t *target = find_records_store(uuid);
 	if (!target) return;
+
 	char file_path[FILE_PATH_LEN];
-	uint32_t timestamp = record->timestamp;
 	uint16_t idx = target->record_idx;
+	uint32_t timestamp = record->timestamp;
 
 	//# Found existing UUID - update record
 	target->records[idx].timestamp = timestamp;
@@ -330,6 +337,7 @@ static void cache_n_write_record(
 	target->records[idx].value3 = record->value3;
 	target->record_idx = (idx + 1) % RECORD_BUFFER_LEN;
 	target->last_aggregate_count++;
+	target->last_timestamp = timestamp;
 
 	//# First time: reference for the 5 minute update time 
 	if (target->last_aggregate_sec == 0) {
@@ -454,6 +462,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	// need 2 passes
 	for (int i = 0; i < LOG_NODE_COUNT; i++) {
 		records_store_t *target = &RECORDS_STORES[i];
+
 		//# overwrite existing uuid's config
 		if (target->uuid == uuid) {
 			target->config = config;
@@ -464,6 +473,9 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 			// UUID is new - add to empty slot and break loop
 			target->uuid = uuid;
 			target->config = config;		// default config
+
+			// update UUID_ARRAY
+			UUIDS_ARRAY[i] = uuid;
 			break;
 		}
 	}
@@ -483,11 +495,13 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	}
 
 	fclose(f);
-	ESP_LOGW(TAG_SF, "%s %s uuid %08lX config %ld", method_name, file_path, uuid, config);
+	ESP_LOGW(TAG_SF, "%s CONFIG-SAVE", method_name);	
+	printf("Saved at: %s uuid %08lX config %ld\n", file_path, uuid, config);
 	return ESP_OK;
 }
 
 static esp_err_t sd_load_config() {
+	const char method_name[] = "sd_load_config";
 	const char *file_path = SD_POINT"/log/config.txt";
 	FILE *f = fopen(file_path, "r");
 	if (!f) {
@@ -496,7 +510,7 @@ static esp_err_t sd_load_config() {
 	}
 
 	char line[64];
-	int loaded = 0;
+	int target_idx = 0;
 
 	while (fgets(line, sizeof(line), f)) {
 		// Quick validation
@@ -512,16 +526,21 @@ static esp_err_t sd_load_config() {
 		
 		//! filter for valid uuid and config
 		if (uuid == 0 || config == 0) continue;
-		records_store_t *target = &RECORDS_STORES[loaded];
+
+		// update UUID_ARRAY
+		UUIDS_ARRAY[target_idx] = uuid;
+
+		// update RECORDS_STORE
+		records_store_t *target = &RECORDS_STORES[target_idx];
 		target->uuid = uuid;
 		target->config = config;
 		memset(target->records, 0, sizeof(target->records));
-		loaded++;
+		target_idx++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
 	}
 
 	fclose(f);
-	ESP_LOGI(TAG_SF, "Loaded %d configs", loaded);
+	ESP_LOGI(TAG_SF, "%s CONFIG-LOADED: %d configs", method_name, target_idx);
 	return ESP_OK;
 }
 
@@ -556,7 +575,7 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	*ptr++ = ']';
 	*ptr = '\0';
 
-	ESP_LOGW(TAG_SF, "%s CONFIG-FOUND %d", method_name, count);
+	ESP_LOGW(TAG_SF, "%s CONFIG-FOUND: %d", method_name, count);
 	return ptr - buffer; // Return length
 }
 
@@ -586,7 +605,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	*ptr++ = ']';
 	*ptr = '\0';
 
-	ESP_LOGW(TAG_SF, "%s CACHE-FOUND %d", method_name, count);
+	ESP_LOGW(TAG_SF, "%s CACHE-FOUND: %d", method_name, count);
 	return ptr - buffer; // Return length
 }
 

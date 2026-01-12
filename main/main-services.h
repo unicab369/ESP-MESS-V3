@@ -291,7 +291,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	// Validate parameters
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
 	if (uuid < 1) {
-		ESP_LOGE(TAG_HTTP, "Err %s Invalid device %s", method_name, device_id);
+		ESP_LOGE(TAG_HTTP, "%s INVALID-UUID: %s", method_name, device_id);
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
 
@@ -453,7 +453,7 @@ int get_n_records(
 
 // fs_access - internal
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
-	const char method_name[] = "GET_RECORDS_HANDLER";
+	const char method_name[] = "HTTP_GET_RECORDS_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
 	httpd_resp_set_type(req, "text/plain");
 	
@@ -490,25 +490,21 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		maxT_s = strtoull(maxT_str, NULL, 10);
 	}
 
-	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV %s %d/%02d/%02d range %dm", 
-							method_name, device_id, year, month, day, window);
+	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV", method_name);
+	printf("Requested: dev=%s, date=%d/%02d/%02d, window=%dm\n", device_id, year, month, day, window);
+
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
 	
-	int found = 0;
 	char file_path[64];
-
 	esp_err_t ret = ESP_OK;
 	uint64_t time_ref;
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
+	records_store_t *target = find_records_store(uuid);
 
-	for (int i=0; i < LOG_NODE_COUNT; i++) {
-		records_store_t *target = &RECORDS_STORES[i];
-		if (target->uuid != uuid) continue;
-		found = 1;
-
+	if (target) {
 		if (window > 60 && month > 0 && day > 0) {
 			// if window is greater than 59 minutes, get daily log
 			make_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
@@ -516,7 +512,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 
 			file_header_t header;
 
-			if (!FS_ACCESS_START(req)) break;
+			if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
 			elapse_start(&time_ref);
 			int len = record_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
 			FS_ACCESS_RELEASE();
@@ -528,14 +524,12 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 			// elapse_start(&time_ref);
 			// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
 			// elapse_print("**** http_send_record_chunks", &time_ref);
-			break;
 		} else {
 			// takes about 5ms for 300 records
 			return httpd_resp_send(req, (const char*)target->records, sizeof(target->records));
 		}
-		break;;
 	}
-	if (!found) {
+	else {
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Record not registered");
 	}
 

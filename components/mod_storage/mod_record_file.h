@@ -110,7 +110,7 @@ int record_batch_insert(
 	size_t total_bytes = record_size * count;
 	if (header.next_offset + total_bytes > MAX_DATA_SIZE) {
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "%s INSUFFICIENT-SPACE %d records written.",
+		ESP_LOGE(TAG_RECORD, "%s INSUFFICIENT-SPACE: %d records written.",
 				method_name, header.record_count);
 		return 0;
 	}
