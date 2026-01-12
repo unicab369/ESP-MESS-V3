@@ -3,9 +3,11 @@
 
 #define LITTLEFS_POINT "/littlefs"
 
-static const char *TAG_LITFS = "[LitFS]";
+static const char *TAG_LITFS = "#LitFS";
 
 void littleFS_init() {
+	const char method_name[] = "littleFS_init";
+
 	esp_vfs_littlefs_conf_t conf = {
 		.base_path = LITTLEFS_POINT,
 		.partition_label = "storage",
@@ -18,11 +20,11 @@ void littleFS_init() {
 	esp_err_t ret = esp_vfs_littlefs_register(&conf);
 	if (ret != ESP_OK) {
 		if (ret == ESP_FAIL) {
-			ESP_LOGE(TAG_LITFS, "Err: LittleFS mount failed");
+			ESP_LOGE(TAG_LITFS, "%s MOUNT-FAILED", method_name);
 		} else if (ret == ESP_ERR_NOT_FOUND) {
-			ESP_LOGE(TAG_LITFS, "Not Found: LittleFS partition");
+			ESP_LOGE(TAG_LITFS, "%s NOT-FOUND", method_name);
 		} else {
-			ESP_LOGE(TAG_LITFS, "Init Err: LittleFS (%s)", esp_err_to_name(ret));
+			ESP_LOGE(TAG_LITFS, "%s ERR-FOUND: %s", method_name, esp_err_to_name(ret));
 		}
 		return;
 	}
@@ -30,10 +32,11 @@ void littleFS_init() {
 	size_t total = 0, used = 0;
 	ret = esp_littlefs_info(conf.partition_label, &total, &used);
 	if (ret != ESP_OK) {
-		ESP_LOGE(TAG_LITFS, "Err: LittleFS info (%s)", esp_err_to_name(ret));
+		ESP_LOGE(TAG_LITFS, "%s INFO-EXCEPTION: %s", method_name, esp_err_to_name(ret));
 		esp_littlefs_format(conf.partition_label);
 	} else {
-		ESP_LOGW(TAG_LITFS, "LittleFS partition total: %d, used: %d", total, used);
+		ESP_LOGW(TAG_LITFS, "%s PARTITION-INFO", method_name);
+		printf("Partition: %dB (used)/ %d\n", used, total);
 	}
 }
 

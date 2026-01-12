@@ -101,7 +101,6 @@ void log_diagnostics_handler() {
 }
 
 
-
 void app_main(void) {
 	esp_err_t ret;
 	FS_MUTEX = xSemaphoreCreateMutex();
