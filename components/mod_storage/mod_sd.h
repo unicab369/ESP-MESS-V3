@@ -107,9 +107,9 @@ void sd_test(void) {
 #define LOG_NODE_COUNT 10
 #define RECORD_BUFFER_LEN 300					// 300 seconds of 12 bytes
 // #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
-#define AGGREGATE_INTERVAL_SEC 20				// 5 minutes
+#define AGGREGATE_INTERVAL_SEC 8				// 5 minutes
 #define AGGREGATE_SAMPLE_COUNT 5
-#define AGGREGATE_MAX_FILE_COUNT 5
+#define AGGREGATE_MAX_FILE_COUNT 20
 
 typedef struct {
 	uint32_t timestamp;
@@ -318,10 +318,16 @@ static int prepare_aggregate_file(
 	return 1;
 }
 
+#define BUFFER_SIZE sizeof(record_t) * AGGREGATE_SAMPLE_COUNT
+static uint8_t test_data[BUFFER_SIZE];
+static uint8_t read_buffer[BUFFER_SIZE];
+static record_t recs_to_write[AGGREGATE_SAMPLE_COUNT];
 
 static void cache_n_write_record(
 	uint32_t uuid, record_t *record, int year, int month, int day
 ) {
+	memset(test_data, 0xAB, sizeof(test_data));
+
 	char method_name[] = "cache_n_write_record";
 	records_store_t *target = find_records_store(uuid);
 	if (!target) return;
@@ -362,15 +368,89 @@ static void cache_n_write_record(
 	make_aggregate_filePath(file_path, uuid, year, month, day, target->file_index);
 
 	//# Aggregate records
-	record_t recs_to_write[AGGREGATE_SAMPLE_COUNT];
 	aggregate_records(target, recs_to_write, AGGREGATE_SAMPLE_COUNT);		// ~200us for 5 samples
 	ESP_LOGW(TAG_SF, "%s LOG-AGGREGATE", method_name);
 	printf("Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
 
 	//# Write to the file
 	target->header.latest_time = timestamp;
-	int next_offset = record_batch_insert(file_path, &target->header, recs_to_write, 
+
+	uint64_t time_ref;
+	file_header_t header;
+	nvs_handle_t my_handle;
+	static record_t recs_to_read[AGGREGATE_SAMPLE_COUNT];
+	static record_t recs_to_read2[AGGREGATE_SAMPLE_COUNT];
+	static record_t recs_to_read3[AGGREGATE_SAMPLE_COUNT];
+
+	
+	// ~20ms
+	elapse_start(&time_ref);
+	int next_offset = record_batch_insert(file_path, &target->header, recs_to_write,
 										sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
+	elapse_print("\n*** WRITE1", &time_ref);
+
+	// ~10ms
+	elapse_start(&time_ref);
+	int len = record_file_read(&header, file_path, recs_to_read, sizeof(record_t), AGGREGATE_SAMPLE_COUNT);	// ~10ms
+	elapse_print("*** READ1", &time_ref);
+	printf("Read %d records from: %s\n", len, file_path);
+
+	//######################################
+	ESP_LOGE(TAG_SF, "=== TEST1 === ");
+
+	// ~15ms
+	elapse_start(&time_ref);
+	nvs_open("storage", NVS_READWRITE, &my_handle);		// ~250us
+	nvs_set_blob(my_handle, "records2", recs_to_write, sizeof(record_t) * AGGREGATE_SAMPLE_COUNT);
+	nvs_commit(my_handle);
+	nvs_close(my_handle);
+	elapse_print("\n*** WRITE2", &time_ref);
+
+	// ~1.5ms for 1 record. ~2.7ms to read 3 records.
+	size_t required_size = sizeof(record_t) * AGGREGATE_SAMPLE_COUNT;
+	elapse_start(&time_ref);
+	nvs_open("storage", NVS_READONLY, &my_handle);
+	nvs_get_blob(my_handle, "records2", recs_to_read2, &required_size);
+	nvs_close(my_handle);
+	elapse_print("*** READ2", &time_ref);
+
+	for (int i = AGGREGATE_SAMPLE_COUNT-2; i < AGGREGATE_SAMPLE_COUNT; i++) {
+		printf("[%d] timestamp: %ld, value1: %d\n",
+			i, recs_to_read2[i].timestamp, recs_to_read2[i].value1);
+	}
+
+	//######################################
+	ESP_LOGE(TAG_SF, "=== TEST2 === ");
+
+	printf("sizeof(test_data): %d\n", sizeof(test_data));
+	printf("sizeof(recs_to_write): %d\n", sizeof(recs_to_write));
+	// memcpy(test_data, recs_to_write, sizeof(test_data));
+
+	// ~1ms
+	elapse_start(&time_ref);
+	nvs_open("storage", NVS_READWRITE, &my_handle);
+	nvs_set_blob(my_handle, "test", test_data, sizeof(test_data));
+	nvs_commit(my_handle);
+	nvs_close(my_handle);
+	elapse_print("\n*** WRITE3", &time_ref);
+
+	// ~1ms
+	size_t size = sizeof(read_buffer);
+	elapse_start(&time_ref);
+	nvs_open("storage", NVS_READONLY, &my_handle);
+	nvs_get_blob(my_handle, "test", read_buffer, &size);
+	nvs_close(my_handle);
+	elapse_print("*** READ3", &time_ref);
+	printf("last byte: %02X\n", read_buffer[sizeof(read_buffer) - 1]);
+
+	memcpy(recs_to_read3, read_buffer, sizeof(read_buffer));
+	for (int i = 0; i < AGGREGATE_SAMPLE_COUNT-3; i++) {
+		printf("[%d] timestamp: %ld, value1: %d\n",
+			i, recs_to_read3[i].timestamp, recs_to_read3[i].value1);
+	}
+
+
+	//######################################
 
 	if (!next_offset) {
 		// rerun to prepare the file again for the next cycle

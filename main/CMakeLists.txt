@@ -1,5 +1,6 @@
 idf_component_register(
-    SRCS "test_storage.c"
+    SRCS "main.c"
+    # SRCS "test_storage.c"
     # SRCS "test_network.c"
     
     INCLUDE_DIRS
