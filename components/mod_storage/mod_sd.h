@@ -107,8 +107,8 @@ void sd_test(void) {
 #define LOG_NODE_COUNT 10
 #define RECORD_BUFFER_LEN 300					// 300 seconds of 12 bytes
 // #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
-#define AGGREGATE_INTERVAL_SEC 10				// 5 minutes
-#define AGGREGATE_SAMPLE_COUNT 8
+#define AGGREGATE_INTERVAL_SEC 15				// 5 minutes
+#define AGGREGATE_SAMPLE_COUNT 5
 #define AGGREGATE_MAX_FILE_COUNT 20
 
 typedef struct {
@@ -359,7 +359,10 @@ static void cache_n_write_record(
 	if (timestamp - target->last_aggregate_sec < AGGREGATE_INTERVAL_SEC) {
 		return;
 	}
-
+	//# Track the last 5 minute update time
+	target->last_aggregate_sec = timestamp;
+	target->last_aggregate_count = 0;
+	
 	//# Prepare file
 	int check = prepare_aggregate_file(file_path, target, uuid, year, month, day);
 	if (!check) return;
@@ -390,10 +393,10 @@ static void cache_n_write_record(
 										sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
 	if (!next_offset) {
 		// force recovery
-		target->curr_year = year;
-		target->curr_month = 0;
-		target->curr_day = 0;
-		return;
+		// target->curr_year = year;
+		// target->curr_month = 0;
+		// target->curr_day = 0;
+		// return;
 	}
 	elapse_print("*** WRITE1", &time_ref);
 
@@ -484,10 +487,6 @@ static void cache_n_write_record(
 	// 	ESP_LOGE(TAG_SF, "Read: %ld %d %d",
 	// 		read_back[i].timestamp, read_back[i].value1, read_back[i].value2);
 	// }
-
-	//# Track the last 5 minute update time
-	target->last_aggregate_sec = timestamp;
-	target->last_aggregate_count = 0;
 }
 
 
