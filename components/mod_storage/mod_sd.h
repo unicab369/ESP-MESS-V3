@@ -107,8 +107,8 @@ void sd_test(void) {
 #define LOG_NODE_COUNT 10
 #define RECORD_BUFFER_LEN 300					// 300 seconds of 12 bytes
 // #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
-#define AGGREGATE_INTERVAL_SEC 8				// 5 minutes
-#define AGGREGATE_SAMPLE_COUNT 5
+#define AGGREGATE_INTERVAL_SEC 10				// 5 minutes
+#define AGGREGATE_SAMPLE_COUNT 8
 #define AGGREGATE_MAX_FILE_COUNT 20
 
 typedef struct {
@@ -319,15 +319,18 @@ static int prepare_aggregate_file(
 }
 
 #define BUFFER_SIZE sizeof(record_t) * AGGREGATE_SAMPLE_COUNT
-static uint8_t test_data[BUFFER_SIZE];
-static uint8_t read_buffer[BUFFER_SIZE];
 static record_t recs_to_write[AGGREGATE_SAMPLE_COUNT];
+static uint8_t read_buffer[BUFFER_SIZE];
+static uint8_t test_data[BUFFER_SIZE];
+
+static nvs_handle_t my_handle;
+static record_t recs_to_read[AGGREGATE_SAMPLE_COUNT];
+static record_t recs_to_read2[AGGREGATE_SAMPLE_COUNT];
+static record_t recs_to_read3[AGGREGATE_SAMPLE_COUNT];
 
 static void cache_n_write_record(
 	uint32_t uuid, record_t *record, int year, int month, int day
 ) {
-	memset(test_data, 0xAB, sizeof(test_data));
-
 	char method_name[] = "cache_n_write_record";
 	records_store_t *target = find_records_store(uuid);
 	if (!target) return;
@@ -367,7 +370,7 @@ static void cache_n_write_record(
 	// max 1 minute a record: 10rec, 30rec, 60rec, 3hr=180rec, 6hr=360rec
 	make_aggregate_filePath(file_path, uuid, year, month, day, target->file_index);
 
-	//# Aggregate records
+	//# Aggregate records. NOTE: recs_to_write need to be static for fast access
 	aggregate_records(target, recs_to_write, AGGREGATE_SAMPLE_COUNT);		// ~200us for 5 samples
 	ESP_LOGW(TAG_SF, "%s LOG-AGGREGATE", method_name);
 	printf("Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
@@ -377,17 +380,22 @@ static void cache_n_write_record(
 
 	uint64_t time_ref;
 	file_header_t header;
-	nvs_handle_t my_handle;
-	static record_t recs_to_read[AGGREGATE_SAMPLE_COUNT];
-	static record_t recs_to_read2[AGGREGATE_SAMPLE_COUNT];
-	static record_t recs_to_read3[AGGREGATE_SAMPLE_COUNT];
 
-	
+	printf("\n");
+	ESP_LOGE(TAG_SF, "=== SD TEST === ");
+
 	// ~20ms
 	elapse_start(&time_ref);
 	int next_offset = record_batch_insert(file_path, &target->header, recs_to_write,
 										sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
-	elapse_print("\n*** WRITE1", &time_ref);
+	if (!next_offset) {
+		// force recovery
+		target->curr_year = year;
+		target->curr_month = 0;
+		target->curr_day = 0;
+		return;
+	}
+	elapse_print("*** WRITE1", &time_ref);
 
 	// ~10ms
 	elapse_start(&time_ref);
@@ -396,58 +404,54 @@ static void cache_n_write_record(
 	printf("Read %d records from: %s\n", len, file_path);
 
 	//######################################
-	ESP_LOGE(TAG_SF, "=== TEST1 === ");
+	printf("\n");
+	ESP_LOGI(TAG_SF, "=== LITTLEFS TEST === ");
 
-	// ~15ms
+	// ~18ms
+	elapse_start(&time_ref);
+	FILE* f = fopen("/littlefs/test.bin", "wb");
+	fwrite(recs_to_read2, sizeof(record_t), AGGREGATE_SAMPLE_COUNT, f);
+	fclose(f);
+	elapse_print("*** WRITE2", &time_ref);
+
+	// ~7ms
+	elapse_start(&time_ref);
+	f = fopen("/littlefs/test.bin", "rb");
+	fread(recs_to_read3, sizeof(record_t), AGGREGATE_SAMPLE_COUNT, f);
+	fclose(f);
+	elapse_print("*** READ2", &time_ref);
+
+	// for (int i = 0; i < 2; i++) {
+	// 	printf("[%d] timestamp: %ld, value1: %d\n",
+	// 		i, recs_to_read3[i].timestamp, recs_to_read3[i].value1);
+	// }
+
+	//######################################
+	printf("\n");
+	ESP_LOGI(TAG_SF, "=== NVS TEST ===");
+	// memcpy(test_data, recs_to_write, sizeof(recs_to_write));
+
+	// ~20ms
 	elapse_start(&time_ref);
 	nvs_open("storage", NVS_READWRITE, &my_handle);		// ~250us
-	nvs_set_blob(my_handle, "records2", recs_to_write, sizeof(record_t) * AGGREGATE_SAMPLE_COUNT);
+	nvs_set_blob(my_handle, "records", recs_to_write, sizeof(recs_to_write));
+	// nvs_set_blob(my_handle, "records", test_data, sizeof(test_data));
 	nvs_commit(my_handle);
 	nvs_close(my_handle);
-	elapse_print("\n*** WRITE2", &time_ref);
+	elapse_print("*** WRITE3", &time_ref);
 
 	// ~1.5ms for 1 record. ~2.7ms to read 3 records.
 	size_t required_size = sizeof(record_t) * AGGREGATE_SAMPLE_COUNT;
 	elapse_start(&time_ref);
 	nvs_open("storage", NVS_READONLY, &my_handle);
-	nvs_get_blob(my_handle, "records2", recs_to_read2, &required_size);
-	nvs_close(my_handle);
-	elapse_print("*** READ2", &time_ref);
-
-	for (int i = AGGREGATE_SAMPLE_COUNT-2; i < AGGREGATE_SAMPLE_COUNT; i++) {
-		printf("[%d] timestamp: %ld, value1: %d\n",
-			i, recs_to_read2[i].timestamp, recs_to_read2[i].value1);
-	}
-
-	//######################################
-	ESP_LOGE(TAG_SF, "=== TEST2 === ");
-
-	printf("sizeof(test_data): %d\n", sizeof(test_data));
-	printf("sizeof(recs_to_write): %d\n", sizeof(recs_to_write));
-	// memcpy(test_data, recs_to_write, sizeof(test_data));
-
-	// ~1ms
-	elapse_start(&time_ref);
-	nvs_open("storage", NVS_READWRITE, &my_handle);
-	nvs_set_blob(my_handle, "test", test_data, sizeof(test_data));
-	nvs_commit(my_handle);
-	nvs_close(my_handle);
-	elapse_print("\n*** WRITE3", &time_ref);
-
-	// ~1ms
-	size_t size = sizeof(read_buffer);
-	elapse_start(&time_ref);
-	nvs_open("storage", NVS_READONLY, &my_handle);
-	nvs_get_blob(my_handle, "test", read_buffer, &size);
+	nvs_get_blob(my_handle, "records", recs_to_read2, &required_size);
 	nvs_close(my_handle);
 	elapse_print("*** READ3", &time_ref);
-	printf("last byte: %02X\n", read_buffer[sizeof(read_buffer) - 1]);
 
-	memcpy(recs_to_read3, read_buffer, sizeof(read_buffer));
-	for (int i = 0; i < AGGREGATE_SAMPLE_COUNT-3; i++) {
-		printf("[%d] timestamp: %ld, value1: %d\n",
-			i, recs_to_read3[i].timestamp, recs_to_read3[i].value1);
-	}
+	// for (int i = 0; i < 2; i++) {
+	// 	printf("[%d] timestamp: %ld, value1: %d\n",
+	// 		i, recs_to_read2[i].timestamp, recs_to_read2[i].value1);
+	// }
 
 
 	//######################################

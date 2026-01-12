@@ -155,7 +155,8 @@ int record_file_read(
 	const char method_name[] = "record_file_read";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s Not Found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("File not found: %s\n", filename);
 		return 0;
 	}
 
@@ -194,7 +195,8 @@ int record_file_read_at(
 	const char method_name[] = "record_file_read_at";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("File not found: %s\n", filename);
 		return 0;
 	}
 	
@@ -225,7 +227,8 @@ int record_file_read_last(const char* filename, void* output, size_t record_size
 	const char method_name[] = "record_file_read_last";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("File not found: %s\n", filename);
 		return 0;
 	}
 	
@@ -256,7 +259,8 @@ void record_file_status(const char* filename, size_t record_size) {
 	const char method_name[] = "record_file_status";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
-		ESP_LOGE(TAG_RECORD, "Err %s not found: %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("File not found: %s\n", filename);
 		return;
 	}
 	
