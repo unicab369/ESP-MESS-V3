@@ -20,7 +20,7 @@ idf.py build
 1. Build the project: `idf.py build` or `idf.py app build`
 2. Flash the project: `idf.py flash -p COMx` if a COM port already selected then use `idf.py flash`
 3. Open the monitor: `idf.py monitor`, or flash and monitor `idf.py flash monitor`
-   
+
 Example work flow: <br>
 ```
 idf.py app build
@@ -42,8 +42,8 @@ Live Server
 Serial Monitor
 WSL
 Power Mode
-
-
+Highlight Trailing Whitespace
+Easy Highlight
 
 
 ## terminal command

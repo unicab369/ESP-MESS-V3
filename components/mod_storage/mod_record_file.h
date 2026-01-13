@@ -38,7 +38,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 			header->magic == HEADER_MAGIC
 		) {
 			// Valid file already exists!
-			ESP_LOGW(TAG_RECORD, "%s RECORD-FOUND", method_name);
+			ESP_LOGI(TAG_RECORD, "%s RECORD-FOUND", method_name);
 			printf("- Found: %s (%d records, next_offset %d)\n", 
 					filename, header->record_count, header->next_offset);
 			return file;
@@ -46,13 +46,14 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 
         // Invalid file - close and recreate
         fclose(file);
-		ESP_LOGW(TAG_RECORD, "%s INVALID-FOUND %s. Recreating...", method_name, filename);
+		ESP_LOGI(TAG_RECORD, "%s INVALID-FOUND %s. Recreating...", method_name, filename);
 	}
 
 	// Create the file
 	file = fopen(filename, "wb+");
 	if (!file) {
-		ESP_LOGW(TAG_RECORD, "%s CANNOT-CREATE %s", method_name, filename);
+		ESP_LOGE(TAG_RECORD, "%s CANNOT-CREATE", method_name);
+		printf("- Failed to create: %s\n", filename);
 		return NULL;
 	}
 	
@@ -72,7 +73,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
     }
 
 	// fclose(f);
-	ESP_LOGW(TAG_RECORD, "%s LOG-CREATED", method_name);
+	ESP_LOGI(TAG_RECORD, "%s LOG-CREATED", method_name);
 	printf("- File created: %s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
 
 	// return 1;
@@ -98,13 +99,7 @@ int record_batch_insert(
 	// Check capacity
 	size_t total_bytes = record_size * count;
 	size_t write_pos = HEADER_SIZE + output_header->next_offset;
-
-	if (output_header->next_offset + total_bytes > MAX_DATA_SIZE) {
-		fclose(f);
-		ESP_LOGE(TAG_RECORD, "%s INSUFFICIENT-SPACE: %d records written.",
-				method_name, current_header.record_count);
-		return 0;
-	}
+	
 	// // Handle wrap-around if needed
     // if (output_header->next_offset + total_bytes > MAX_DATA_SIZE) {
     //     // Wrap to beginning (circular buffer)
@@ -137,7 +132,7 @@ int record_batch_insert(
 	fwrite(&current_header, 1, HEADER_SIZE, f);		// ~30us
 	fclose(f);
 
-	ESP_LOGW(TAG_RECORD, "%s INSERT-RECORD", method_name);
+	ESP_LOGI(TAG_RECORD, "%s INSERT-RECORD", method_name);
 	printf("- Inserted: %d/%d records (total %d, next_offset %d)\n",
 			written, count, current_header.record_count, current_header.next_offset);
 
@@ -170,7 +165,7 @@ int record_file_read(
 	if (records_to_read > max_records) records_to_read = max_records;
 	
 	if (records_to_read == 0) {
-		ESP_LOGW(TAG_RECORD, "%s NO-RECORD found", method_name);
+		ESP_LOGI(TAG_RECORD, "%s NO-RECORD found", method_name);
         fclose(file);
         return 0;  // No records to read
     }
@@ -180,7 +175,7 @@ int record_file_read(
 	int count = fread(output, record_size, records_to_read, file);
 	fclose(file);
 
-	ESP_LOGW(TAG_RECORD, "%s READ-RECORD", method_name);
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
 	printf("- Read Completed: %d/%d records\n", count, records_to_read);
 
 	return count;
@@ -271,7 +266,7 @@ void record_file_status(const char* filename, size_t record_size) {
 	fclose(f);
 	
     uint16_t next_offset = header.next_offset;
-	ESP_LOGW(TAG_RECORD, "File status for %s", filename);
+	ESP_LOGI(TAG_RECORD, "File status for %s", filename);
 	printf("Magic: 0x%08lX %s\n", header.magic, 
 				header.magic == HEADER_MAGIC ? "(OK)" : "(CORRUPT!)");
 	printf("Records written: %d, remaining: %d\n",

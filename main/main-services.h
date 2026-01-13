@@ -296,7 +296,8 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	}
 
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
-	ESP_LOGW(TAG_HTTP, "%s uuid: %08lX, Config: %ld", method_name, uuid, config);
+	ESP_LOGW(TAG_HTTP, "%s SAVE-CONFIG", method_name);
+	printf("Saving: uuid %08lX, Config %ld", uuid, config);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
