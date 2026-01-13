@@ -492,7 +492,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	}
 
 	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV", method_name);
-	printf("Requested: dev=%s, date=%d/%02d/%02d, window=%dm\n", device_id, year, month, day, window);
+	printf("Requested: dev=%s, date=%d/%02d/%02d, window = %d m\n", device_id, year, month, day, window);
 
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -506,38 +506,41 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	active_records_t *target = find_records_store(uuid);
 
 	if (target) {
-		if (window > 59 && month > 0 && day > 0) {
-			aggregate_cache_t *match = find_aggregate_cache(uuid);
+		if (year > 0 && month > 0 && day > 0) {
+			if (window > 299) {
+				touch_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
+				ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name);
+				printf("- Target File: %s\n", file_path);
 
-			if (match) {
+				file_header_t header;
+
+				if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
 				elapse_start(&time_ref);
-				httpd_resp_send(req, (char*)match->min_records, sizeof(match->min_records));	// ~5ms
+				int len = series_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+				FS_ACCESS_RELEASE();
+
+				ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
 				elapse_print("*** httpd_resp_send", &time_ref);
+				printf("*** startTime: %ld, latestTime: %ld\n", header.start_timestamp, header.last_timestamp);
+				return ret;
 			}
+			else if (window > 59) {
+				aggregate_cache_t *match = find_aggregate_cache(uuid);
 
-			// // if window is greater than 59 minutes, get daily log
-			// touch_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
-			// ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name);
-			// printf("- Target File: %s\n", file_path);
+				if (match) {
+					elapse_start(&time_ref);
+					httpd_resp_send(req, (char*)match->min_records, sizeof(match->min_records));	// ~5ms
+					elapse_print("*** httpd_resp_send", &time_ref);
+				}
 
-			// file_header_t header;
-
-			// if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
-			// elapse_start(&time_ref);
-			// int len = series_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
-			// FS_ACCESS_RELEASE();
-
-			// ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
-			// elapse_print("*** httpd_resp_send", &time_ref);
-			// printf("*** startTime: %ld, latestTime: %ld\n", header.start_time, header.latest_time);
-
-			// elapse_start(&time_ref);
-			// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
-			// elapse_print("**** http_send_record_chunks", &time_ref);
-		} else {
-			// takes about 5ms for 300 records
-			return httpd_resp_send(req, (const char*)target->sec_records,
-									sizeof(target->sec_records));
+				// elapse_start(&time_ref);
+				// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
+				// elapse_print("**** http_send_record_chunks", &time_ref);
+			}
+			else {
+				// takes about 5ms for 300 records
+				return httpd_resp_send(req, (const char*)target->sec_records, sizeof(target->sec_records));
+			}
 		}
 	}
 	else {

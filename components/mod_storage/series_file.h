@@ -1,6 +1,7 @@
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#include "rtc_helper.h"
 
 #define RECORD_FILE_BLOCK_SIZE 4096
 #define HEADER_MAGIC 0xCACABABE // File identifier
@@ -12,11 +13,11 @@ static const char *TAG_RECORD = "#REC";
 // ============================================================================
 
 typedef struct __attribute__((packed)) {
-	uint32_t magic;         	// header identifier
+	uint32_t magic;         		// header identifier
 	uint32_t start_timestamp;    	// Unix timestamp of the first record
-	uint32_t latest_timestamp;		// Unix timestamp of the latest record
-	uint16_t next_offset;   	// Where to write next (0-4086)
-	uint16_t series_count;  	// How many records written
+	uint32_t last_timestamp;		// Unix timestamp of the latest record
+	uint16_t last_series_count;  	// How many series written
+	uint16_t next_offset;   		// Where to write next (0-4086)
 
 	uint32_t preserved1;
 	uint32_t preserved2;
@@ -51,8 +52,8 @@ FILE* series_file_ensure(const char* filename, file_header_t *header) {
 		) {
 			// Valid file already exists!
 			ESP_LOGI(TAG_RECORD, "%s RECORD-FOUND", method_name);
-			printf("- Found: %s (%d records, next_offset %d)\n",
-					filename, header->series_count, header->next_offset);
+			printf("- Found: %s (%d series, next_offset %d)\n",
+					filename, header->last_series_count, header->next_offset);
 			return file;
 		}
 
@@ -72,9 +73,9 @@ FILE* series_file_ensure(const char* filename, file_header_t *header) {
 	// Write header
 	header->magic = HEADER_MAGIC;
 	header->start_timestamp = 0;
-	header->latest_timestamp = 0;
+	header->last_timestamp = 0;
 	header->next_offset = 0;
-	header->series_count = 0;
+	header->last_series_count = 0;
 	fwrite(header, 1, HEADER_SIZE, file);
 
     // Pre-allocate fixed size efficiently
@@ -102,7 +103,7 @@ FILE* series_file_ensure(const char* filename, file_header_t *header) {
 
 int series_batch_insert(
 	const char* filename, file_header_t *output_header,
-	const void *records, size_t record_size, int count
+	const void *series, size_t series_size, int count
 ) {
 	const char method_name[] = "series_batch_insert";
 
@@ -111,7 +112,7 @@ int series_batch_insert(
 	if (!f) return 0;
 
 	// Check capacity
-	size_t total_bytes = record_size * count;
+	size_t total_bytes = series_size * count;
 	size_t write_pos = HEADER_SIZE + output_header->next_offset;
 
 	// // Handle wrap-around if needed
@@ -122,28 +123,28 @@ int series_batch_insert(
 	//     output_header->series_count = 0;  // Reset count on wrap
 	// }
 
-	// Write the records
+	// Write the series
 	fseek(f, write_pos, SEEK_SET);								// ~200us
-	size_t written = fwrite(records, record_size, count, f);	// ~75us
+	size_t written = fwrite(series, series_size, count, f);	// ~75us
 
 	if (written == 0) {
 		// Complete failure
 		fclose(f);
-		ESP_LOGE(TAG_RECORD, "%s WRITE-FAILED 0/%d records written",
+		ESP_LOGE(TAG_RECORD, "%s WRITE-FAILED 0/%d series written",
 				method_name, count);
 		return 0;
 	}
 
 	//# Update timestamps
 	if (current_header.start_timestamp == 0) {
-		current_header.start_timestamp = output_header->latest_timestamp;
+		current_header.start_timestamp = output_header->last_timestamp;
 	}
-	current_header.latest_timestamp = output_header->latest_timestamp;
+	current_header.last_timestamp = output_header->last_timestamp;
 
 	//# Update headers
-	size_t actual_bytes = written * record_size;
+	size_t actual_bytes = written * series_size;
 	current_header.next_offset += actual_bytes;
-	current_header.series_count += (uint32_t)written;
+	current_header.last_series_count += (uint32_t)written;
 	*output_header = current_header;
 
 	// Write back updated header
@@ -152,15 +153,119 @@ int series_batch_insert(
 	fclose(f);
 
 	ESP_LOGI(TAG_RECORD, "%s INSERT-RECORD", method_name);
-	printf("- Inserted: %d/%d records (total %d, next_offset %d)\n",
-			written, count, current_header.series_count, current_header.next_offset);
+	printf("- Inserted: %d/%d series (total %d, next_offset %d)\n",
+			written, count, current_header.last_series_count, current_header.next_offset);
 
 	return current_header.next_offset;
 }
 
-int series_file_read(
+
+// ============================================================================
+// READ MULTIPLE RECORD
+// ============================================================================
+
+// Only return the series if the header start timestamp > the input timestamp
+int series_file_read_start(
+	const char* filename, uint32_t timestamp, void* output,
+	size_t series_size, int series_count
+) {
+	const char method_name[] = "series_file_read_start";
+
+	FILE* file = fopen(filename, "rb");
+	if (!file) {
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("- File not found: %s\n", filename);
+		return 0;
+	}
+
+	// Read and validate current header
+	file_header_t header;
+	fread(&header, 1, HEADER_SIZE, file);
+
+	if (header.magic != HEADER_MAGIC) {
+		ESP_LOGE(TAG_RECORD, "%s INVALID-HEADER", method_name);
+		fclose(file);
+		return 0;
+	}
+
+	// Check if the header latest timestamp is smaller than the input
+	if (header.start_timestamp > timestamp) {
+		ESP_LOGE(TAG_RECORD, "%s RANGE-OUTBOUND", method_name);
+		printf("- Outbound: header start_ts %ld, input ts %ld\n",
+				header.last_timestamp, timestamp);
+		fclose(file);
+		return 0;
+	}
+
+	fseek(file, HEADER_SIZE, SEEK_SET);
+	int count = fread(output, series_size, series_count, file);
+	fclose(file);
+
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
+	printf("- Read: %d/%d series\n", count, series_count);
+
+	return count;
+}
+
+//* @brief Only return the series if the header latest timestamp < the input timestamp
+// input timestamp has to be EARLIER than the header latest timestamp
+
+int series_file_read_latest(
+	const char* filename, uint32_t timestamp, void* output,
+	size_t series_size, int requested_count
+) {
+	const char method_name[] = "series_file_read_latest";
+
+	FILE* file = fopen(filename, "rb");
+	if (!file) {
+		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
+		printf("- File not found: %s\n", filename);
+		return 0;
+	}
+
+	//# Read and validate current header
+	file_header_t header;
+	fread(&header, 1, HEADER_SIZE, file);
+
+	if (header.magic != HEADER_MAGIC) {
+		ESP_LOGE(TAG_RECORD, "%s INVALID-HEADER", method_name);
+		fclose(file);
+		return 0;
+	}
+
+	char last_ts[20], input_ts[20];
+	RTC_get_datetimeStr_fromEpoch(last_ts, header.last_timestamp);
+	RTC_get_datetimeStr_fromEpoch(input_ts, timestamp);
+
+	//# Check if the header latest timestamp is smaller than the input
+	if (header.last_timestamp < timestamp) {
+		ESP_LOGE(TAG_RECORD, "%s RANGE-OUTBOUND", method_name);
+		printf("- Outbound: input_ts (%s) - last_ts (%s)\n", input_ts, last_ts);
+		fclose(file);
+		return 0;
+	}
+
+	int target_count = requested_count;
+	if (header.last_series_count < requested_count) {
+		target_count = header.last_series_count;
+	}
+
+	//# seek by n requested count records before the next offset
+	fseek(file, HEADER_SIZE + header.next_offset - (target_count * series_size), SEEK_SET);
+	int count = fread(output, series_size, requested_count, file);
+	fclose(file);
+
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
+	printf("- Read: %d/%d(max) series, Total Count: %d, next_offset: %d\n",
+			count, requested_count, header.last_series_count, header.next_offset);
+	printf("- Range: input_ts (%s) - last_ts (%s)\n", count, requested_count, input_ts, last_ts);
+	return count;
+}
+
+// Read series including the header - also validates then header
+int series_file_read_all(
 	file_header_t *header, const char* filename,
-	void* output, size_t record_size, int max_records
+	void* output, size_t series_size, int series_count
 ) {
 	const char method_name[] = "series_file_read";
 
@@ -179,23 +284,23 @@ int series_file_read(
 		return 0;
 	}
 
-	// Determine how many records to read
-	int records_to_read = header->series_count;
-	if (records_to_read > max_records) records_to_read = max_records;
+	// Determine how many series to read
+	int count_to_read = header->last_series_count;
+	if (count_to_read > series_count) count_to_read = series_count;
 
-	if (records_to_read == 0) {
+	if (count_to_read == 0) {
 		ESP_LOGI(TAG_RECORD, "%s NO-RECORD found", method_name);
         fclose(file);
-        return 0;  // No records to read
+        return 0;  // No series to read
     }
 
-	// Skip header and read all records in one go
+	// Skip header and read all series in one go
 	fseek(file, HEADER_SIZE, SEEK_SET);
-	int count = fread(output, record_size, records_to_read, file);
+	int count = fread(output, series_size, count_to_read, file);
 	fclose(file);
 
 	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
-	printf("- Read Completed: %d/%d records\n", count, records_to_read);
+	printf("- Read Completed: %d/%d series\n", count, count_to_read);
 
 	return count;
 }
@@ -205,7 +310,7 @@ int series_file_read(
 // ============================================================================
 
 int series_file_read_at(
-	int record_index, const char* filename, void* output, size_t record_size
+	int record_index, const char* filename, void* output, size_t series_size
 ) {
 	const char method_name[] = "series_file_read_at";
 
@@ -221,17 +326,17 @@ int series_file_read_at(
 	fread(&header, 1, HEADER_SIZE, f);
 
 	// Validate index
-	if (record_index < 0 || record_index >= header.series_count) {
+	if (record_index < 0 || record_index >= header.last_series_count) {
 		fclose(f);
 		return 0;
 	}
 
-	// Calculate position: header + (index * record_size) & Read the record
-	size_t read_pos = HEADER_SIZE + (record_index * record_size);
+	// Calculate position: header + (index * series_size) & Read the record
+	size_t read_pos = HEADER_SIZE + (record_index * series_size);
 	fseek(f, read_pos, SEEK_SET);
-	int result = fread(output, 1, record_size, f);
+	int result = fread(output, 1, series_size, f);
 	fclose(f);
-	return (result == record_size);
+	return (result == series_size);
 }
 
 
@@ -239,7 +344,7 @@ int series_file_read_at(
 // GET LAST RECORD
 // ============================================================================
 
-int series_file_read_last(const char* filename, void* output, size_t record_size) {
+int series_file_read_last(const char* filename, void* output, size_t series_size) {
 	const char method_name[] = "series_file_read_last";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
@@ -252,18 +357,18 @@ int series_file_read_last(const char* filename, void* output, size_t record_size
 	file_header_t header;
 	fread(&header, 1, HEADER_SIZE, f);
 
-	// Check if any records exist
-	if (header.series_count == 0) {
+	// Check if any series exist
+	if (header.last_series_count == 0) {
 		fclose(f);
 		return 0;
 	}
 
-	// Last record is at: header + next_offset - record_size
-	size_t last_pos = HEADER_SIZE + header.next_offset - record_size;
+	// Last record is at: header + next_offset - series_size
+	size_t last_pos = HEADER_SIZE + header.next_offset - series_size;
 	fseek(f, last_pos, SEEK_SET);
-	int result = fread(output, 1, record_size, f);
+	int result = fread(output, 1, series_size, f);
 	fclose(f);
-	return (result == record_size);
+	return (result == series_size);
 }
 
 
@@ -271,7 +376,7 @@ int series_file_read_last(const char* filename, void* output, size_t record_size
 // GET FILE STATUS
 // ============================================================================
 
-void series_file_status(const char* filename, size_t record_size) {
+void series_file_status(const char* filename, size_t series_size) {
 	const char method_name[] = "series_file_status";
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
@@ -288,7 +393,7 @@ void series_file_status(const char* filename, size_t record_size) {
 	ESP_LOGI(TAG_RECORD, "File status for %s", filename);
 	printf("Magic: 0x%08lX %s\n", header.magic,
 				header.magic == HEADER_MAGIC ? "(OK)" : "(CORRUPT!)");
-	printf("Records written: %d, remaining: %d\n",
-				header.series_count, (MAX_DATA_SIZE - next_offset) / record_size);
+	printf("series written: %d, remaining: %d\n",
+				header.last_series_count, (MAX_DATA_SIZE - next_offset) / series_size);
 	printf("Space used: %d/%d bytes\n", HEADER_SIZE + next_offset, RECORD_FILE_BLOCK_SIZE);
 }
