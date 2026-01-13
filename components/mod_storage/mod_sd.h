@@ -104,12 +104,13 @@ void sd_test(void) {
 
 
 //###################################################
-#define LOG_NODE_COUNT 10
+#define ACTIVE_RECORDS_COUNT 10
 #define RECORD_BUFFER_LEN 300					// 300 seconds of 12 bytes
 // #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
 #define AGGREGATE_INTERVAL_SEC 8				// 5 minutes
 #define AGGREGATE_SAMPLE_COUNT 5
 #define AGGREGATE_MAX_FILE_COUNT 20
+#define AGGREGATE_CACHE_COUNT 5
 
 typedef struct {
 	uint32_t timestamp;
@@ -134,33 +135,51 @@ typedef struct {
 	uint16_t last_aggregate_count;
 	uint16_t record_idx;
 	record_t records[RECORD_BUFFER_LEN];
-} records_store_t;
+} active_records_t;
 
 typedef struct {
 	uint32_t uuid;
 	uint32_t timestamp;
 } device_cache_t;
 
-static records_store_t RECORDS_STORES[LOG_NODE_COUNT] = {0};
-static uint32_t UUIDS_ARRAY[LOG_NODE_COUNT] = {0};
-static device_cache_t DEVICE_CACHE[LOG_NODE_COUNT] = {0};
+
+typedef struct {
+	uint32_t uuid;
+	uint32_t start_timestamp;
+	uint32_t end_timestamp;
+	uint32_t circular_index;
+	record_t records[AGGREGATE_SAMPLE_COUNT];
+} aggregate_cache_t;
+
+static device_cache_t DEVICE_CACHE[ACTIVE_RECORDS_COUNT] = {0};
+static active_records_t ACTIVE_RECORDS[ACTIVE_RECORDS_COUNT] = {0};
+static uint32_t ACTIVE_UUIDS[ACTIVE_RECORDS_COUNT] = {0};
+static aggregate_cache_t AGGREGATE_CACHE[AGGREGATE_CACHE_COUNT] = {0};
+static uint32_t AGGREGATE_CACHE_UUIDS[AGGREGATE_CACHE_COUNT] = {0};
 
 static int find_uuid_index(uint32_t uuid) {
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		if (UUIDS_ARRAY[i] == uuid) return i;
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
+		if (ACTIVE_UUIDS[i] == uuid) return i;
 	}
 	return -1;
 }
 
-static records_store_t *find_records_store(uint32_t uuid) {
-    for (int i = 0; i < LOG_NODE_COUNT; i++) {
-        if (UUIDS_ARRAY[i] == uuid) return &RECORDS_STORES[i];
+static active_records_t *find_records_store(uint32_t uuid) {
+    for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
+        if (ACTIVE_UUIDS[i] == uuid) return &ACTIVE_RECORDS[i];
     }
     return NULL;
 }
 
+static aggregate_cache_t *find_aggregate_cache(uint32_t uuid) {
+	for (int i = 0; i < AGGREGATE_CACHE_COUNT; i++) {
+		if (AGGREGATE_CACHE_UUIDS[i] == uuid) return &AGGREGATE_CACHE[i];
+	}
+	return NULL;
+}
+
 static void cache_device(uint32_t uuid, uint32_t time_ref) {
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
 		device_cache_t *target = &DEVICE_CACHE[i];
 		
 		if (target->uuid == uuid) {
@@ -187,7 +206,7 @@ static void test_print_last2_records(record_t *records) {
 }
 
 static void aggregate_records(
-	records_store_t *target, record_t *rec_to_write, int sample_count
+	active_records_t *target, record_t *rec_to_write, int sample_count
 ) {
 	// empty records
 	memset(rec_to_write, 0, sizeof(rec_to_write[0]) * sample_count);
@@ -256,7 +275,7 @@ static void make_aggregate_filePath(
 
 
 static int prepare_aggregate_file(
-	char *file_path, records_store_t *target,uint32_t uuid, int year, int month, int day
+	char *file_path, active_records_t *target,uint32_t uuid, int year, int month, int day
 ) {
 	static const char method_name[] = "prepare_aggregate_file";
 
@@ -310,12 +329,6 @@ static int prepare_aggregate_file(
 			target_file_idx = target->file_index;
 		}
 
-		// prepare the file
-		ESP_LOGW(TAG_SF, "%s PREPARE-FILE", method_name);
-		printf("Start file: %s\n", file_path);
-		target->header.start_time = target->last_timestamp;
-		// record_file_start(file_path, &target->header);
-
 		// update target
 		target->curr_month = month;
 		target->curr_day = day;
@@ -327,6 +340,8 @@ static int prepare_aggregate_file(
 	// <uuid>/YY/MMDD-n+i.bin (Max 4 files per day - total 24 hours)
 	// max 1 minute a record: 10rec, 30rec, 60rec, 3hr=180rec, 6hr=360rec
 	make_aggregate_filePath(file_path, uuid, year, month, day, target->file_index);
+	ESP_LOGW(TAG_SF, "%s PREPARING-FILE", method_name);
+	printf("- Start file: %s\n", file_path);
 
 	return 1;
 }
@@ -338,50 +353,69 @@ static uint8_t test_data[BUFFER_SIZE];
 static nvs_handle_t my_handle;
 static record_t recs_to_read[AGGREGATE_SAMPLE_COUNT];
 
+static void reload_aggregate_specs(
+	active_records_t *active, record_t *record, uint32_t timestamp
+) {
+	if (record == NULL) {
+		// reset last aggregate values
+		active->last_aggregate_count = 0;
+		active->last_aggregate_sec = timestamp;
+	}
+	else {
+		// update records values
+		const int idx = active->record_idx;
+		active->records[idx].timestamp = timestamp;
+		active->records[idx].value1 = record->value1;
+		active->records[idx].value2 = record->value2;
+		active->records[idx].value3 = record->value3;
+
+		active->last_aggregate_count++;
+		active->last_timestamp = timestamp;
+		active->record_idx = (active->record_idx + 1) % RECORD_BUFFER_LEN;
+	}
+}
+
 static void cache_n_write_record(
 	uint32_t uuid, record_t *record, int year, int month, int day
 ) {
 	char method_name[] = "cache_n_write_record";
-	records_store_t *target = find_records_store(uuid);
-	if (!target) return;
+	active_records_t *active = find_records_store(uuid);
+	if (!active) return;
 
 	char file_path[FILE_PATH_LEN];
-	uint16_t idx = target->record_idx;
+	uint16_t idx = active->record_idx;
 	uint32_t timestamp = record->timestamp;
 	record_t recs_to_write[AGGREGATE_SAMPLE_COUNT];
+	uint64_t time_ref;
 
 	//# Found existing UUID - update record
-	target->records[idx].timestamp = timestamp;
-	target->records[idx].value1 = record->value1;
-	target->records[idx].value2 = record->value2;
-	target->records[idx].value3 = record->value3;
-	target->record_idx = (idx + 1) % RECORD_BUFFER_LEN;
-	target->last_aggregate_count++;
-	target->last_timestamp = timestamp;
+	reload_aggregate_specs(active, record, timestamp);
 
 	//# First time: reference for the 5 minute update time 
-	if (target->last_aggregate_sec == 0) {
-		target->last_aggregate_sec = timestamp;
+	if (active->last_aggregate_sec == 0) {
+		active->last_aggregate_sec = timestamp;
 		return;
 	}
-
 	//# Check if 5 minutes have passed
-	if (timestamp - target->last_aggregate_sec < AGGREGATE_INTERVAL_SEC) {
-		ESP_LOGI(TAG_SF, "IM HERE1");
+	else if (timestamp - active->last_aggregate_sec < AGGREGATE_INTERVAL_SEC) {
 		return;
 	}
 
 	//# Prepare file
-	int check = prepare_aggregate_file(file_path, target, uuid, year, month, day);
+	int check = prepare_aggregate_file(file_path, active, uuid, year, month, day);
 	if (!check) return;
 
 	//# Aggregate records
-	aggregate_records(target, recs_to_write, AGGREGATE_SAMPLE_COUNT);		// ~200us for 5 samples
+	elapse_start(&time_ref);
+	aggregate_records(active, recs_to_write, AGGREGATE_SAMPLE_COUNT);		// ~200us for 5 samples
+	elapse_print("\n*** AGGREGATE", &time_ref);
+
+	test_print_last2_records(recs_to_write);
+	
 	ESP_LOGW(TAG_SF, "%s LOG-AGGREGATE", method_name);
-	printf("Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
+	printf("- Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
 
 	//# Write to the file
-	uint64_t time_ref;
 	file_header_t header;
 
 	//######################################
@@ -390,28 +424,28 @@ static void cache_n_write_record(
 
 	// ~20ms
 	elapse_start(&time_ref);
-	int next_offset = record_batch_insert(file_path, &target->header, recs_to_write,
+	int next_offset = record_batch_insert(file_path, &active->header, recs_to_write,
 										sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
-	elapse_print("*** WRITE1", &time_ref);
+	elapse_print("\n*** WRITE1", &time_ref);
 	if (!next_offset) {
 		// rerun to prepare the file again for the next cycle
-		target->curr_month = 0;
-		target->curr_day = 0;
-		target->file_index = 0;
+		active->curr_month = 0;
+		active->curr_day = 0;
+		active->file_index = 0;
 		return;
 	}
 	else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
 		// increase the file_index an reset dates to make a new record_file next time
-		target->curr_month = 0;
-		target->curr_day = 0;
-		target->file_index++;
+		active->curr_month = 0;
+		active->curr_day = 0;
+		active->file_index++;
 	}
 
 	// ~10ms
 	elapse_start(&time_ref);
 	int len = record_file_read(&header, file_path, recs_to_read, 
 								sizeof(record_t), AGGREGATE_SAMPLE_COUNT);	// ~10ms
-	elapse_print("*** READ1", &time_ref);
+	elapse_print("\n*** READ1", &time_ref);
 
 	//######################################
 
@@ -469,7 +503,7 @@ static void cache_n_write_record(
 
 	//######################################
 
-	// printf("*** total aggregate count: %d\n", target->last_aggregate_count);
+	// printf("*** total aggregate count: %d\n", active->last_aggregate_count);
 	// for (int i = 0; i < AGGREGATE_SAMPLE_COUNT; i++) {
 	// 	printf("[%d] timestamp: %ld, value1: %d\n", i, rec_to_write[i].timestamp, rec_to_write[i].value1);
 	// }
@@ -485,8 +519,7 @@ static void cache_n_write_record(
 	// }
 
 	//# Track the last 5 minute update time
-	target->last_aggregate_sec = timestamp;
-	target->last_aggregate_count = 0;
+	reload_aggregate_specs(active, NULL, timestamp);
 }
 
 
@@ -543,8 +576,8 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	const char method_name[] = "sd_save_config";
 
 	// need 2 passes
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		records_store_t *target = &RECORDS_STORES[i];
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
+		active_records_t *target = &ACTIVE_RECORDS[i];
 
 		//# overwrite existing uuid's config
 		if (target->uuid == uuid) {
@@ -558,7 +591,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 			target->config = config;		// default config
 
 			// update UUID_ARRAY
-			UUIDS_ARRAY[i] = uuid;
+			ACTIVE_UUIDS[i] = uuid;
 			break;
 		}
 	}
@@ -571,8 +604,8 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 		return ESP_FAIL;
 	}
 
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		records_store_t *target = &RECORDS_STORES[i];
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
+		active_records_t *target = &ACTIVE_RECORDS[i];
 		if (target->uuid == 0) continue;
 		fprintf(f, "%08lX %ld\n", target->uuid, target->config);
 	}
@@ -611,10 +644,10 @@ static esp_err_t sd_load_config() {
 		if (uuid == 0 || config == 0) continue;
 
 		// update UUID_ARRAY
-		UUIDS_ARRAY[target_idx] = uuid;
+		ACTIVE_UUIDS[target_idx] = uuid;
 
 		// update RECORDS_STORE
-		records_store_t *target = &RECORDS_STORES[target_idx];
+		active_records_t *target = &ACTIVE_RECORDS[target_idx];
 		target->uuid = uuid;
 		target->config = config;
 		memset(target->records, 0, sizeof(target->records));
@@ -638,8 +671,8 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	int count = 0;
 	*ptr++ = '[';
 	
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
-		records_store_t *target = &RECORDS_STORES[i];
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
+		active_records_t *target = &ACTIVE_RECORDS[i];
 
 		//! filter for valid uuid and config
 		if (target->uuid == 0 || target->config == 0) continue;
@@ -670,7 +703,7 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	char *ptr = buffer;
 	*ptr++ = '[';
 	
-	for (int i = 0; i < LOG_NODE_COUNT; i++) {
+	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
         device_cache_t *target = &DEVICE_CACHE[i];
         if (target->uuid == 0) break;
 		

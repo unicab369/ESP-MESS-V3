@@ -502,7 +502,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	esp_err_t ret = ESP_OK;
 	uint64_t time_ref;
 	uint32_t uuid = hex_to_uint32_unrolled(device_id);
-	records_store_t *target = find_records_store(uuid);
+	active_records_t *target = find_records_store(uuid);
 
 	if (target) {
 		if (window > 60 && month > 0 && day > 0) {

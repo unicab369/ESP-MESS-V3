@@ -39,7 +39,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 		) {
 			// Valid file already exists!
 			ESP_LOGW(TAG_RECORD, "%s RECORD-FOUND", method_name);
-			printf("Found: %s (has %d records, next_offset %d)\n", 
+			printf("- Found: %s (%d records, next_offset %d)\n", 
 					filename, header->record_count, header->next_offset);
 			return file;
 		}
@@ -73,7 +73,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 
 	// fclose(f);
 	ESP_LOGW(TAG_RECORD, "%s LOG-CREATED", method_name);
-	printf("File created: %s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
+	printf("- File created: %s (%d bytes)\n", filename, RECORD_FILE_BLOCK_SIZE);
 
 	// return 1;
 	return file;
@@ -138,12 +138,11 @@ int record_batch_insert(
 	fclose(f);
 
 	ESP_LOGW(TAG_RECORD, "%s INSERT-RECORD", method_name);
-	printf("Inserted Completed: %d/%d records (total %d, next_offset %d)\n",
+	printf("- Inserted: %d/%d records (total %d, next_offset %d)\n",
 			written, count, current_header.record_count, current_header.next_offset);
 
 	return current_header.next_offset;
 }
-
 
 int record_file_read(
 	file_header_t *header, const char* filename,
@@ -151,18 +150,18 @@ int record_file_read(
 ) {
 	const char method_name[] = "record_file_read";
 
-	FILE* f = fopen(filename, "rb");
-	if (!f) {
+	FILE* file = fopen(filename, "rb");
+	if (!file) {
 		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
-		printf("File not found: %s\n", filename);
+		printf("- File not found: %s\n", filename);
 		return 0;
 	}
 
 	// Read and validate current header
-	fread(header, 1, HEADER_SIZE, f);
+	fread(header, 1, HEADER_SIZE, file);
 	if (header->magic != HEADER_MAGIC) {
 		ESP_LOGE(TAG_RECORD, "%s INVALID-HEADER", method_name);
-		fclose(f);
+		fclose(file);
 		return 0;
 	}
 
@@ -172,17 +171,17 @@ int record_file_read(
 	
 	if (records_to_read == 0) {
 		ESP_LOGW(TAG_RECORD, "%s NO-RECORD found", method_name);
-        fclose(f);
+        fclose(file);
         return 0;  // No records to read
     }
 
 	// Skip header and read all records in one go
-	fseek(f, HEADER_SIZE, SEEK_SET);
-	int count = fread(output, record_size, records_to_read, f);
-	fclose(f);
+	fseek(file, HEADER_SIZE, SEEK_SET);
+	int count = fread(output, record_size, records_to_read, file);
+	fclose(file);
 
 	ESP_LOGW(TAG_RECORD, "%s READ-RECORD", method_name);
-	printf("Read Completed: %d/%d records\n", count, records_to_read);
+	printf("- Read Completed: %d/%d records\n", count, records_to_read);
 
 	return count;
 }
@@ -199,7 +198,7 @@ int record_file_read_at(
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
 		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
-		printf("File not found: %s\n", filename);
+		printf("- File not found: %s\n", filename);
 		return 0;
 	}
 	
@@ -231,7 +230,7 @@ int record_file_read_last(const char* filename, void* output, size_t record_size
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
 		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
-		printf("File not found: %s\n", filename);
+		printf("- File not found: %s\n", filename);
 		return 0;
 	}
 	
@@ -263,7 +262,7 @@ void record_file_status(const char* filename, size_t record_size) {
 	FILE* f = fopen(filename, "rb");
 	if (!f) {
 		ESP_LOGE(TAG_RECORD, "%s NOT-FOUND", method_name);
-		printf("File not found: %s\n", filename);
+		printf("- File not found: %s\n", filename);
 		return;
 	}
 	
