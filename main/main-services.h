@@ -297,7 +297,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
 	ESP_LOGW(TAG_HTTP, "%s SAVE-CONFIG", method_name);
-	printf("Saving: uuid %08lX, Config %ld", uuid, config);
+	printf("Saving: uuid %08lX, Config %ld\n", uuid, config);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
@@ -455,9 +455,9 @@ int get_n_records(
 // fs_access - internal
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_GET_RECORDS_HANDLER";
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
-	
+
 	char query[128];
 	char device_id[9] = {0};
 	char year_str[5] = {0};
@@ -474,12 +474,12 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	if (query_len > sizeof(query)) query_len = sizeof(query);
 
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
-		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));        
+		httpd_query_key_value(query, "dev", device_id, sizeof(device_id));
 		httpd_query_key_value(query, "yr", year_str, sizeof(year_str));
 		httpd_query_key_value(query, "mth", month_str, sizeof(month_str));
 		httpd_query_key_value(query, "day", day_str, sizeof(day_str));
 		httpd_query_key_value(query, "win", window_str, sizeof(window_str));
-		
+
 		window = atoi(window_str);
 		year = atoi(year_str);
 		month = atoi(month_str);
@@ -498,7 +498,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	if (year < 0 || (month < 0 && day < 0)) {
 		return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing parameters");
 	}
-	
+
 	char file_path[64];
 	esp_err_t ret = ESP_OK;
 	uint64_t time_ref;
@@ -506,28 +506,38 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	active_records_t *target = find_records_store(uuid);
 
 	if (target) {
-		if (window > 60 && month > 0 && day > 0) {
-			// if window is greater than 59 minutes, get daily log
-			make_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
-			ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name); printf("at %s\n", file_path);
+		if (window > 59 && month > 0 && day > 0) {
+			aggregate_cache_t *match = find_aggregate_cache(uuid);
 
-			file_header_t header;
+			if (match) {
+				elapse_start(&time_ref);
+				httpd_resp_send(req, (char*)match->min_records, sizeof(match->min_records));	// ~5ms
+				elapse_print("*** httpd_resp_send", &time_ref);
+			}
 
-			if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
-			elapse_start(&time_ref);
-			int len = record_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
-			FS_ACCESS_RELEASE();
+			// // if window is greater than 59 minutes, get daily log
+			// make_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
+			// ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name);
+			// printf("- Target File: %s\n", file_path);
 
-			ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
-			elapse_print("*** httpd_resp_send", &time_ref);
-			printf("*** startTime: %ld, latestTime: %ld\n", header.start_time, header.latest_time);
+			// file_header_t header;
+
+			// if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
+			// elapse_start(&time_ref);
+			// int len = record_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+			// FS_ACCESS_RELEASE();
+
+			// ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
+			// elapse_print("*** httpd_resp_send", &time_ref);
+			// printf("*** startTime: %ld, latestTime: %ld\n", header.start_time, header.latest_time);
 
 			// elapse_start(&time_ref);
 			// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
 			// elapse_print("**** http_send_record_chunks", &time_ref);
 		} else {
 			// takes about 5ms for 300 records
-			return httpd_resp_send(req, (const char*)target->records, sizeof(target->records));
+			return httpd_resp_send(req, (const char*)target->sec_records,
+									sizeof(target->sec_records));
 		}
 	}
 	else {

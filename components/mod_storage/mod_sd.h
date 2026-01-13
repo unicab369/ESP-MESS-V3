@@ -55,7 +55,7 @@ esp_err_t sd_write(const char *path, char *buff) {
 	return ESP_OK;
 }
 
-void sd_test(void) {	
+void sd_test(void) {
 	//# First create a file.
 	const char *file_hello = SD_POINT"/hello.txt";
 	char data[MAX_CHAR_SIZE];
@@ -114,6 +114,7 @@ void sd_test(void) {
 #define AGGREGATE_RECORD_COUNT 60				// 60 records 1 minute each
 #define AGGREGATE_CACHE_COUNT 5
 
+// #define USE_SD_STORAGE
 typedef struct {
 	uint32_t timestamp;
 	int16_t value1;
@@ -128,7 +129,7 @@ typedef struct {
 	uint32_t last_aggregate_sec;	// track when the last aggregate happened
 	uint32_t last_timestamp;		// last timestamp recorded
 	file_header_t header;
-	
+
 	uint8_t file_index;				// the file index for aggregated data
 	uint8_t curr_year;
 	uint8_t curr_month;
@@ -136,7 +137,7 @@ typedef struct {
 
 	uint16_t last_aggregate_count;
 	uint16_t record_idx;
-	record_t records[RECORD_BUFFER_LEN];
+	record_t sec_records[RECORD_BUFFER_LEN];		// 300 seconds
 } active_records_t;
 
 typedef struct {
@@ -150,7 +151,7 @@ typedef struct {
 	uint32_t start_timestamp;
 	uint32_t end_timestamp;
 	uint32_t circular_index;
-	record_t level2_records[AGGREGATE_RECORD_COUNT];
+	record_t min_records[AGGREGATE_RECORD_COUNT];		// 60 minutes
 } aggregate_cache_t;
 
 static device_cache_t DEVICE_CACHE[ACTIVE_RECORDS_COUNT] = {0};
@@ -183,16 +184,16 @@ static aggregate_cache_t *find_aggregate_cache(uint32_t uuid) {
 static void cache_device(uint32_t uuid, uint32_t time_ref) {
 	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
 		device_cache_t *target = &DEVICE_CACHE[i];
-		
+
 		if (target->uuid == uuid) {
 			// Found existing UUID
 			target->timestamp = time_ref;
 			break;  // Done!
 		}
-		
+
 		//! Assumption: First empty slot, the rest are uuid = 0
 		// UUID is new - add to empty slot and break loop
-		if (target->uuid == 0) { 
+		if (target->uuid == 0) {
 			target->uuid = uuid;
 			target->timestamp = time_ref;
 			break;
@@ -241,13 +242,13 @@ static void aggregate_records(
 		int idx = start_idx + i;
 		// handle wrap-around
 		if (idx >= RECORD_BUFFER_LEN) idx -= RECORD_BUFFER_LEN;
-		
-		sum_timestamp += target->records[idx].timestamp;
-		sum_value1 += target->records[idx].value1;
-		sum_value2 += target->records[idx].value2;
-		sum_value3 += target->records[idx].value3;
+
+		sum_timestamp += target->sec_records[idx].timestamp;
+		sum_value1 += target->sec_records[idx].value1;
+		sum_value2 += target->sec_records[idx].value2;
+		sum_value3 += target->sec_records[idx].value3;
 		count++;
-		
+
 		if (count >= target_sample_size) {
 			rec_to_write[sample_idx].timestamp = sum_timestamp / count;
 			rec_to_write[sample_idx].value1 = sum_value1 / count;
@@ -271,7 +272,7 @@ static void aggregate_records(
 static void make_aggregate_filePath(
 	char *file_path, uint32_t uuid, int year, int month, int day, int file_idx
 ) {
-	snprintf(file_path, FILE_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d-%d.bin", 
+	snprintf(file_path, FILE_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d-%d.bin",
 			uuid, year, month, day, file_idx);
 }
 
@@ -366,10 +367,10 @@ static void reload_aggregate_specs(
 	else {
 		// update records values
 		const int idx = active->record_idx;
-		active->records[idx].timestamp = timestamp;
-		active->records[idx].value1 = record->value1;
-		active->records[idx].value2 = record->value2;
-		active->records[idx].value3 = record->value3;
+		active->sec_records[idx].timestamp = timestamp;
+		active->sec_records[idx].value1 = record->value1;
+		active->sec_records[idx].value2 = record->value2;
+		active->sec_records[idx].value3 = record->value3;
 
 		active->last_aggregate_count++;
 		active->last_timestamp = timestamp;
@@ -381,7 +382,7 @@ void cache_inject_records(
 	aggregate_cache_t *aggregate, record_t *new_records, int num_records
 ) {
 	uint32_t write_idx = aggregate->circular_index;
-	record_t *records = aggregate->level2_records;
+	record_t *records = aggregate->min_records;
 
 	// Check if we need to wrap around
 	if (write_idx + num_records <= AGGREGATE_RECORD_COUNT) {
@@ -429,14 +430,10 @@ static void cache_n_write_record(
 		return;
 	}
 
-	//# Prepare file
+	//# Prepare file - and aggregate records
 	int check = prepare_aggregate_file(file_path, active, uuid, year, month, day);
 	if (!check) return;
-
-	//# Aggregate records
 	aggregate_records(active, recs_to_write, AGGREGATE_SAMPLE_COUNT);		// ~200us for 5 samples
-	ESP_LOGI(TAG_SF, "%s LOG-AGGREGATE", method_name);
-	printf("- Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
 
 	//# Handle cache
 	int cache_idx = -1;
@@ -462,40 +459,46 @@ static void cache_n_write_record(
 		cache_inject_records(target_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
 	}
 
-	//# Log to storage
-	printf("\n");
-	ESP_LOGE(TAG_SF, "=== SD TEST === ");
+	//# Writing to storage
+	ESP_LOGI(TAG_SF, "%s LOG-AGGREGATE", method_name);
+	printf("- Writting %d records to: %s\n", AGGREGATE_SAMPLE_COUNT, file_path);
 
-	// ~20ms
-	elapse_start(&time_ref);
-	int next_offset = record_batch_insert(file_path, &active->header, recs_to_write,
-										sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
-	elapse_print("\n*** WRITE1", &time_ref);
+	#ifdef USE_SD_STORAGE
+		//# Log to storage
+		printf("\n");
+		ESP_LOGE(TAG_SF, "=== SD TEST === ");
 
-	if (!next_offset) {
-		// force update file path for next cycle
-		ESP_LOGE(TAG_SF, "%s INVALID-FILE", method_name);
-		printf("- Failed to Insert: Force update file path for next cycle\n");
-		active->curr_year = 0;
-		active->curr_month = 0;
-		active->curr_day = 0;
-		active->file_index = 0;
-		return;
-	}
-	else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
-		ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
-		printf("- Failed to Insert: Force update file path for next cycle\n");
-		// increase the file_index an reset dates to make a new file next time
-		active->curr_month = 0;
-		active->curr_day = 0;
-		active->file_index++;
-	}
+		// ~20ms
+		elapse_start(&time_ref);
+		int next_offset = record_batch_insert(file_path, &active->header, recs_to_write,
+											sizeof(record_t), AGGREGATE_SAMPLE_COUNT);
+		elapse_print("\n*** WRITE1", &time_ref);
 
-	// ~10ms
-	elapse_start(&time_ref);
-	int len = record_file_read(&header, file_path, recs_to_read, 
-								sizeof(record_t), AGGREGATE_SAMPLE_COUNT);	// ~10ms
-	elapse_print("\n*** READ1", &time_ref);
+		if (!next_offset) {
+			// force update file path for next cycle
+			ESP_LOGE(TAG_SF, "%s INVALID-FILE", method_name);
+			printf("- Failed to Insert: Force update file path for next cycle\n");
+			active->curr_year = 0;
+			active->curr_month = 0;
+			active->curr_day = 0;
+			active->file_index = 0;
+			return;
+		}
+		else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
+			ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
+			printf("- Failed to Insert: Force update file path for next cycle\n");
+			// increase the file_index an reset dates to make a new file next time
+			active->curr_month = 0;
+			active->curr_day = 0;
+			active->file_index++;
+		}
+
+		// ~10ms
+		elapse_start(&time_ref);
+		int len = record_file_read(&header, file_path, recs_to_read,
+									sizeof(record_t), AGGREGATE_SAMPLE_COUNT);	// ~10ms
+		elapse_print("\n*** READ1", &time_ref);
+	#endif
 
 	//######################################
 
@@ -522,7 +525,6 @@ static void cache_n_write_record(
 	// 		i, recs_to_read[i].timestamp, recs_to_read[i].value1);
 	// }
 
-
 	//# Track the last 5 minute update time
 	reload_aggregate_specs(active, NULL, timestamp);
 }
@@ -537,13 +539,13 @@ static void cache_n_write_record(
 #define FILE_SIZE (10*1800)		// 1800 records 10 bytes each
 
 static void rotation_get_filePath(uint32_t device_id, int target, char *file_path) {
-	snprintf(file_path, FILE_PATH_LEN, SD_POINT"/log/%08lX/new_%d.bin", 
+	snprintf(file_path, FILE_PATH_LEN, SD_POINT"/log/%08lX/new_%d.bin",
 			device_id, target);
 }
 
 void append_to_circular_buffer(const char* file_path, const void* data, size_t size) {
 	static size_t write_pos = 0;
-	
+
 	FILE* f = fopen(file_path, "rb+");
 	if (!f) {
 		// Create fixed-size file on first run
@@ -553,10 +555,10 @@ void append_to_circular_buffer(const char* file_path, const void* data, size_t s
 			// Pre-allocate file size
 			uint8_t zero_buffer[512] = {0};
 			size_t remaining = FILE_SIZE;
-			
+
 			// fill with zeros
 			while (remaining > 0) {
-				size_t to_write = (remaining > sizeof(zero_buffer)) ? 
+				size_t to_write = (remaining > sizeof(zero_buffer)) ?
 								sizeof(zero_buffer) : remaining;
 				fwrite(zero_buffer, 1, to_write, f);
 				remaining -= to_write;
@@ -565,7 +567,7 @@ void append_to_circular_buffer(const char* file_path, const void* data, size_t s
 			f = fopen(file_path, "rb+");
 		}
 	}
-	
+
 	if (f) {
 		// printf("*** writing file %s at pos %d\n", file_path, write_pos);
 		fseek(f, write_pos, SEEK_SET);
@@ -616,7 +618,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 	}
 
 	fclose(f);
-	ESP_LOGI(TAG_SF, "%s CONFIG-SAVE", method_name);	
+	ESP_LOGI(TAG_SF, "%s CONFIG-SAVE", method_name);
 	printf("Saved at: %s uuid %08lX config %ld\n", file_path, uuid, config);
 	return ESP_OK;
 }
@@ -636,15 +638,15 @@ static esp_err_t sd_load_config() {
 	while (fgets(line, sizeof(line), f)) {
 		// Quick validation
 		if (line[8] != ' ') continue;
-		
+
 		// Parse with strtoul
 		char *endptr;
 		uint32_t uuid = strtoul(line, &endptr, 16);		// base 16
 		if (*endptr != ' ') continue;
-		
+
 		uint32_t config = strtoul(endptr + 1, &endptr, 10);		// base 10
 		if (*endptr != '\n' && *endptr != '\0') continue;
-		
+
 		//! filter for valid uuid and config
 		if (uuid == 0 || config == 0) continue;
 
@@ -655,7 +657,7 @@ static esp_err_t sd_load_config() {
 		active_records_t *target = &ACTIVE_RECORDS[target_idx];
 		target->uuid = uuid;
 		target->config = config;
-		memset(target->records, 0, sizeof(target->records));
+		memset(target->sec_records, 0, sizeof(target->sec_records));
 		target_idx++;
 		printf("Load Config uuid: %08lX, Config: %ld\n", uuid, config);
 	}
@@ -675,20 +677,20 @@ static int make_device_configs_str(char *buffer, size_t buffer_size) {
 	char *ptr = buffer;
 	int count = 0;
 	*ptr++ = '[';
-	
+
 	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
 		active_records_t *target = &ACTIVE_RECORDS[i];
 
 		//! filter for valid uuid and config
 		if (target->uuid == 0 || target->config == 0) continue;
 		if (count > 0) *ptr++ = ',';
-		
+
 		int written = snprintf(ptr, buffer_size - (ptr - buffer),
 							"[\"%08lX\",%ld]", target->uuid, target->config);
 		if (written < 0 || written >= buffer_size - (ptr - buffer)) break; // Buffer full
 		ptr += written;
 		count++;
-		
+
 		// Safety check
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
@@ -707,22 +709,22 @@ static int make_device_caches_str(char *buffer, size_t buffer_size) {
 	int count = 0;
 	char *ptr = buffer;
 	*ptr++ = '[';
-	
+
 	for (int i = 0; i < ACTIVE_RECORDS_COUNT; i++) {
         device_cache_t *target = &DEVICE_CACHE[i];
         if (target->uuid == 0) break;
-		
+
         if (count > 0) *ptr++ = ',';
 		int written = snprintf(ptr, buffer_size - (ptr - buffer),
 							"[\"%08lX\",%ld]", target->uuid, target->timestamp);
 		if (written < 0 || written >= buffer_size - (ptr - buffer)) break; // Buffer full
 		ptr += written;
 		count++;
-		
+
 		// Safety check
 		if (ptr - buffer >= buffer_size - 64) break;
 	}
-	
+
 	*ptr++ = ']';
 	*ptr = '\0';
 
@@ -772,23 +774,23 @@ size_t sd_bin_read(const char *uuid, const char *dateStr, record_t *buffer, size
 void create_preallocated_file(const char* filename) {
 	// Create file with 1 cluster (4KB) allocated
 	FILE* f = fopen(filename, "wb");
-	
+
 	// Write dummy data to allocate cluster
 	uint8_t dummy[4096] = {0};
 	fwrite(dummy, 1, sizeof(dummy), f);
 	fclose(f);
-	
+
 	// Now FAT entry exists, future writes don't update FAT!
 }
 
 void append_to_preallocated(const char* filename, const void* data, size_t size) {
 	// Open for update (cluster already allocated)
 	FILE* f = fopen(filename, "rb+");
-	
+
 	// Overwrite existing data (same cluster)
 	fseek(f, 0, SEEK_SET);
 	fwrite(data, 1, size, f);
-	
+
 	// Only writes data block, no FAT updates!
 	fclose(f);
 }

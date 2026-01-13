@@ -54,7 +54,7 @@ function initCharts(arrays) {
 		output +=  /*html*/
 			`<div class="chart-card">
 				<div class="chart-title">📈 Node: ${ chart_id.toUpperCase() }</div>
-				
+
 				<div class="chart-controls">
 					<label for="timeWindow-${ chart_id }">Time Window:</label>
 					<select id="timeWindow-${ chart_id }" onchange="start_update_scheduler('${chart_id}'); esp_saveConfig('${chart_id}')">
@@ -129,11 +129,11 @@ function initCharts(arrays) {
 				]
 			},
 			scales: {
-				x: { 
+				x: {
 					time: true,
 					auto: true  // This will auto-range based on your timestamps
 				},
-				y: { 
+				y: {
 					range: [0, 100],  // For temp/humidity
 					grid: { stroke: "#eee" }
 				},
@@ -171,23 +171,44 @@ function initCharts(arrays) {
 				{
 					scale: "y",
 					label: "Temp(°C)",
-					stroke: "#ff4444",
 					width: 1.5,
-					value: (u, v) => v?.toFixed(1) + "°C"
+					value: (u, v) => v?.toFixed(1) + "°C",
+					stroke: "#ff4444",
+					// points: {
+					// 	show: true,
+					// 	size: 6,
+					// 	fill: "red",
+					// 	stroke: "white",
+					// 	strokeWidth: 1
+					// }
 				},
 				{
 					scale: "y",
 					label: "Hum(%)",
-					stroke: "#4444ff",
 					width: 1.5,
-					value: (u, v) => v?.toFixed(1) + "%"
+					value: (u, v) => v?.toFixed(1) + "%",
+					stroke: "#4444ff",
+					// points: {
+					// 	show: true,
+					// 	size: 6,
+					// 	fill: "blue",
+					// 	stroke: "white",
+					// 	strokeWidth: 1
+					// }
 				},
 				{
 					scale: "y2",
 					label: "Lux",
-					stroke: "#36454F",
 					width: 1.5,
-					value: (u, v) => v?.toFixed(0) + " lux"
+					value: (u, v) => v?.toFixed(0) + " lux",
+					// stroke: "#36454F",
+					points: {
+						show: true,
+						size: 6,
+						fill: "gray",
+						stroke: "white",
+						strokeWidth: 1
+					}
 				}
 			]
 		};
@@ -210,7 +231,7 @@ async function connectToServer() {
 			document.getElementById('espIp').textContent = data.ip_address
 			document.getElementById('freeMemory').textContent = data.heap_free + ' bytes'
 			console.log('Connected to:', data)
-			
+
 			// Start live data
 			startLiveData()
 		} else {
@@ -303,7 +324,7 @@ async function reload_records(chart_id) {
 			const RECORD_SIZE = 12
 			const recordCount = Math.floor(buffer.byteLength / RECORD_SIZE)
 			const dataView = new DataView(buffer)
-			
+
 			const time_dif_ms = Date.now() - startTime
 
 			// Parse into combined array directly
@@ -312,7 +333,7 @@ async function reload_records(chart_id) {
 				// filter for valid time
 				const time_value = dataView.getUint32(i * RECORD_SIZE, true)
 				if (time_value < 1) continue
-				
+
 				const rec = {
 					time: time_value,
 					temp: dataView.getUint16(i * RECORD_SIZE + 4, true),

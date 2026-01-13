@@ -11,7 +11,7 @@
 		<div class="header">
 			<h1>📈 ESP32 uPlot Dashboard</h1>
 			<p>Real-time sensor data visualization</p>
-			
+
 			<div class="status-bar">
 				<div class="status-item">
 					<div>ESP32 IP</div>
@@ -22,7 +22,7 @@
 					<div id="freeMemory">---</div>
 				</div>
 			</div>
-			
+
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
@@ -45,7 +45,7 @@
 	<script src="../Script-Services.js"></script>
 	<script src="page-script.js"></script>
 
-	<script>		
+	<script>
 		// Handle window resize
 		window.addEventListener('resize', function() {
 			Object.values(chartObjs).forEach(chart => {
@@ -55,7 +55,7 @@
 				});
 			})
 		});
-		
+
 		// Initialize on page load
 		window.addEventListener('DOMContentLoaded', async function() {
 			const serverIp = get_serverIp()
@@ -64,7 +64,7 @@
 			const params = new URLSearchParams({
 				current: Date.now()
 			})
-			
+
 			try {
 				// Load config
 				const resp = await fetch(`http://${serverIp}/g_config?${params.toString()}`, {
@@ -73,7 +73,7 @@
 
 				if (resp.ok) {
 					const arrays = await resp.json()
-					
+
 					console.log('%cConfigs', 'color: red', arrays)
 					initCharts(arrays)
 				} else {
@@ -84,7 +84,7 @@
 			catch(error) {
 				console.error('Connection error:', error)
 			}
-			
+
 			// // Auto-connect if IP is set
 			// const ipInput = document.getElementById('serverIp');
 			// if (ipInput.value) {

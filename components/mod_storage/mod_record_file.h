@@ -39,7 +39,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 		) {
 			// Valid file already exists!
 			ESP_LOGI(TAG_RECORD, "%s RECORD-FOUND", method_name);
-			printf("- Found: %s (%d records, next_offset %d)\n", 
+			printf("- Found: %s (%d records, next_offset %d)\n",
 					filename, header->record_count, header->next_offset);
 			return file;
 		}
@@ -56,13 +56,13 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 		printf("- Failed to create: %s\n", filename);
 		return NULL;
 	}
-	
+
 	// Write header
 	header->magic = HEADER_MAGIC;
 	header->next_offset = 0;
 	header->record_count = 0;
 	fwrite(header, 1, HEADER_SIZE, file);
-	
+
     // Pre-allocate fixed size efficiently
     uint8_t zero[512] = {0};  // Buffer for faster zero-fill
     size_t remaining = RECORD_FILE_BLOCK_SIZE - HEADER_SIZE;
@@ -86,7 +86,7 @@ FILE* record_file_ensure(const char* filename, file_header_t *header) {
 // ============================================================================
 // assume at least one record is always inserted
 
-int record_batch_insert( 
+int record_batch_insert(
 	const char* filename, file_header_t *output_header,
 	const void *records, size_t record_size, int count
 ) {
@@ -99,31 +99,31 @@ int record_batch_insert(
 	// Check capacity
 	size_t total_bytes = record_size * count;
 	size_t write_pos = HEADER_SIZE + output_header->next_offset;
-	
+
 	// // Handle wrap-around if needed
-    // if (output_header->next_offset + total_bytes > MAX_DATA_SIZE) {
-    //     // Wrap to beginning (circular buffer)
-    //     output_header->next_offset = 0;
-    //     write_pos = HEADER_SIZE;
-    //     output_header->record_count = 0;  // Reset count on wrap
-    // }
+	// if (output_header->next_offset + total_bytes > MAX_DATA_SIZE) {
+	//     // Wrap to beginning (circular buffer)
+	//     output_header->next_offset = 0;
+	//     write_pos = HEADER_SIZE;
+	//     output_header->record_count = 0;  // Reset count on wrap
+	// }
 
 	// Write the records
 	fseek(f, write_pos, SEEK_SET);								// ~200us
 	size_t written = fwrite(records, record_size, count, f);	// ~75us
 
 	if (written == 0) {
-        // Complete failure
-        fclose(f);
-        ESP_LOGE(TAG_RECORD, "%s WRITE-FAILED 0/%d records written",
-                method_name, count);
-        return 0;
-    }
+		// Complete failure
+		fclose(f);
+		ESP_LOGE(TAG_RECORD, "%s WRITE-FAILED 0/%d records written",
+				method_name, count);
+		return 0;
+	}
 
 	// Update header
-    size_t actual_bytes = written * record_size;
-    current_header.next_offset += actual_bytes;
-    current_header.record_count += (uint32_t)written;
+	size_t actual_bytes = written * record_size;
+	current_header.next_offset += actual_bytes;
+	current_header.record_count += (uint32_t)written;
 	current_header.latest_time = output_header->latest_time;
 	*output_header = current_header;
 
@@ -163,7 +163,7 @@ int record_file_read(
 	// Determine how many records to read
 	int records_to_read = header->record_count;
 	if (records_to_read > max_records) records_to_read = max_records;
-	
+
 	if (records_to_read == 0) {
 		ESP_LOGI(TAG_RECORD, "%s NO-RECORD found", method_name);
         fclose(file);
