@@ -110,7 +110,7 @@ void sd_test(void) {
 #define SECONDS_PER_HOUR 3600
 
 // #define AGGREGATE_INTERVAL_SEC 300			// 5 minutes
-#define AGGREGATE_INTERVAL_SEC 15				// 5 minutes
+#define AGGREGATE_INTERVAL_SEC 300				// 5 minutes
 #define AGGREGATE_SAMPLE_COUNT 5
 #define AGGREGATE_RECORD_COUNT 60				// 60 records 1 minute each
 #define AGGREGATE_CACHE_COUNT 5
@@ -150,7 +150,7 @@ typedef struct {
 typedef struct {
 	uint32_t uuid;
 	uint32_t start_timestamp;
-	uint32_t end_timestamp;
+	uint32_t last_timestamp;
 	uint32_t circular_index;
 	record_t min_records[AGGREGATE_RECORD_COUNT];		// 60 minutes
 } aggregate_cache_t;
@@ -383,7 +383,7 @@ void cache_inject_records(
 
 	// Update index (wrap around) and timestamps
 	aggregate->circular_index = (write_idx + num_records) % AGGREGATE_RECORD_COUNT;
-	aggregate->end_timestamp = new_records[num_records - 1].timestamp;
+	aggregate->last_timestamp = new_records[num_records - 1].timestamp;
 }
 
 static void reload_aggregate_specs(
@@ -405,6 +405,31 @@ static void reload_aggregate_specs(
 		active->last_timestamp = timestamp;
 		active->record_idx = (active->record_idx + 1) % RECORD_BUFFER_LEN;
 	}
+}
+
+static aggregate_cache_t *first_available_cache(uint32_t uuid) {
+	int cache_idx = -1;
+	aggregate_cache_t *aggregate_cache = NULL;
+
+	// if doesn't exist
+	for (int i = 0; i < AGGREGATE_CACHE_COUNT; i++) {
+		// UUID cache - non ordering
+		if (AGGREGATE_CACHE_UUIDS[i] == 0) cache_idx = i;
+
+		if (AGGREGATE_CACHE_UUIDS[i] == uuid) {
+			// Found existing UUID
+			aggregate_cache = &AGGREGATE_CACHE[i];
+			break;
+		}
+	}
+
+	// cache insert new UUID - if it doesn't exist
+	if (cache_idx != -1 && aggregate_cache == NULL) {
+		AGGREGATE_CACHE_UUIDS[cache_idx] = uuid;
+		aggregate_cache = &AGGREGATE_CACHE[cache_idx];
+	}
+
+	return aggregate_cache;
 }
 
 static void cache_n_write_record(
@@ -430,42 +455,21 @@ static void cache_n_write_record(
 	if (active->last_aggregate_sec == 0) {
 		active->last_aggregate_sec = timestamp;
 
-		record_t min_records[AGGREGATE_RECORD_COUNT];		// 60 minutes
-
 		//! load cache here
 		validate = prepare_aggregate_file(file_path, active, uuid, year, month, day);
 		if (validate < 0) return;
-		// read the header
-		// check for last timestamp
-		// if last timestamp is ealier than current timestamp - exit
-		// load the cache
 
-		// Find records that are in the last 1 hour - 60 minutes ealier than timestamp
+		// find an available cache slot and inject records
+		aggregate_cache_t *aggregate_cache = first_available_cache(uuid);
+		if (!aggregate_cache) return;
+
+		// Find records that are in the last 1 hour OR 60 minutes ealier than timestamp
 		int count = series_file_read_latest(file_path, timestamp - SECONDS_PER_HOUR,
-						&min_records, sizeof(record_t), AGGREGATE_RECORD_COUNT);
+						&aggregate_cache->min_records, sizeof(record_t), AGGREGATE_RECORD_COUNT);
 		if (!count) return;
-		ESP_LOGE(TAG_RECORD, "**** IM HERE ****");
 
-		// // cache update
-		// for (int i = 0; i < AGGREGATE_CACHE_COUNT; i++) {
-		// 	// UUID cache - non ordering
-		// 	if (AGGREGATE_CACHE_UUIDS[i] == 0) cache_idx = i;
-
-		// 	if (AGGREGATE_CACHE_UUIDS[i] == uuid) {
-		// 		// Found existing UUID
-		// 		aggregate_cache = &AGGREGATE_CACHE[i];
-		// 		cache_inject_records(aggregate_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
-		// 		break;
-		// 	}
-		// }
-
-		// // cache insert new - if it doesn't exist
-		// if (cache_idx != -1 && aggregate_cache == NULL) {
-		// 	AGGREGATE_CACHE_UUIDS[cache_idx] = uuid;
-		// 	aggregate_cache = &AGGREGATE_CACHE[cache_idx];
-		// 	cache_inject_records(aggregate_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
-		// }
-
+		aggregate_cache->last_timestamp = aggregate_cache->min_records[count - 1].timestamp;
+		aggregate_cache->circular_index = count - 1;
 
 		return;
 	}
@@ -476,12 +480,19 @@ static void cache_n_write_record(
 	// update interval timestamp
 	active->last_aggregate_sec = timestamp;
 
+	//# aggregate records ~200us for 5 samples of 60 seconds
+	aggregate_records(active, recs_to_write, AGGREGATE_SAMPLE_COUNT);
+
+	//# Handle cache
+	aggregate_cache_t *aggregate_cache = first_available_cache(uuid);
+	if (aggregate_cache) {
+		// inject records
+		cache_inject_records(aggregate_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
+	}
+
 	//# Prepare file
 	validate = prepare_aggregate_file(file_path, active, uuid, year, month, day);
 	if (validate < 0) return;
-
-	// aggregate records ~200us for 5 samples of 60 seconds
-	aggregate_records(active, recs_to_write, AGGREGATE_SAMPLE_COUNT);
 
 	//# Writing to storage
 	ESP_LOGI(TAG_SF, "%s LOG-AGGREGATE", method_name);
@@ -528,39 +539,6 @@ static void cache_n_write_record(
 		elapsed = elapse_stop(&time_ref);
 		ESP_LOGW(TAG_SF, "%s SD-READ duration: %lld us", method_name, elapsed);
 	#endif
-
-	//# Handle cache
-	int cache_idx = -1;
-	aggregate_cache_t *aggregate_cache = NULL;
-
-	//! update cache before inject
-	// insert the file first?
-	// on the first insert, pull the timestamp from the last_timestamp on the header
-	//! read the file on the first insert
-	// how do I know if it's the first insert?
-	//! do I have to wait until the first insert? NO
-	// get it on the file load
-	// dont do on file load
-
-	// cache update - if it exists
-	for (int i = 0; i < AGGREGATE_CACHE_COUNT; i++) {
-		// UUID cache - non ordering
-		if (AGGREGATE_CACHE_UUIDS[i] == 0) cache_idx = i;
-
-		if (AGGREGATE_CACHE_UUIDS[i] == uuid) {
-			// Found existing UUID
-			aggregate_cache = &AGGREGATE_CACHE[i];
-			cache_inject_records(aggregate_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
-			break;
-		}
-	}
-
-	// cache insert new - if it doesn't exist
-	if (cache_idx != -1 && aggregate_cache == NULL) {
-		AGGREGATE_CACHE_UUIDS[cache_idx] = uuid;
-		aggregate_cache = &AGGREGATE_CACHE[cache_idx];
-		cache_inject_records(aggregate_cache, recs_to_write, AGGREGATE_SAMPLE_COUNT);
-	}
 
 	//######################################
 
@@ -681,7 +659,7 @@ static esp_err_t sd_save_config(uint32_t uuid, uint32_t config) {
 
 	fclose(f);
 	ESP_LOGI(TAG_SF, "%s CONFIG-SAVE", method_name);
-	printf("Saved at: %s uuid %08lX config %ld\n", file_path, uuid, config);
+	printf("- Saved at: %s uuid %08lX config %ld\n", file_path, uuid, config);
 	return ESP_OK;
 }
 

@@ -297,7 +297,7 @@ esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 
 	uint32_t config = (uint32_t)strtoul(config_str, NULL, 10);	// decimal base 10
 	ESP_LOGW(TAG_HTTP, "%s SAVE-CONFIG", method_name);
-	printf("Saving: uuid %08lX, Config %ld\n", uuid, config);
+	printf("- Saving: uuid %08lX, Config %ld\n", uuid, config);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
@@ -492,7 +492,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	}
 
 	ESP_LOGI(TAG_HTTP, "%s REQUESTED-DEV", method_name);
-	printf("Requested: dev=%s, date=%d/%02d/%02d, window = %d m\n", device_id, year, month, day, window);
+	printf("- Requested: dev=%s, date=%d/%02d/%02d, window = %d m\n", device_id, year, month, day, window);
 
 	// Validate parameters
 	if (year < 0 || (month < 0 && day < 0)) {
@@ -509,36 +509,40 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 		if (year > 0 && month > 0 && day > 0) {
 			if (window > 299) {
 				touch_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
-				ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name);
+				ESP_LOGW(TAG_HTTP, "%s RECORD-FILE", method_name);
 				printf("- Target File: %s\n", file_path);
 
 				file_header_t header;
 
 				if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
 				elapse_start(&time_ref);
-				int len = series_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+				int len = series_file_read_all(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
 				FS_ACCESS_RELEASE();
 
 				ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
-				elapse_print("*** httpd_resp_send", &time_ref);
-				printf("*** startTime: %ld, latestTime: %ld\n", header.start_timestamp, header.last_timestamp);
+				elapse_print("- httpd_resp_send", &time_ref);
+				printf("- startTime: %ld, latestTime: %ld\n", header.start_timestamp, header.last_timestamp);
 				return ret;
-			}
-			else if (window > 59) {
-				aggregate_cache_t *match = find_aggregate_cache(uuid);
-
-				if (match) {
-					elapse_start(&time_ref);
-					httpd_resp_send(req, (char*)match->min_records, sizeof(match->min_records));	// ~5ms
-					elapse_print("*** httpd_resp_send", &time_ref);
-				}
 
 				// elapse_start(&time_ref);
 				// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
 				// elapse_print("**** http_send_record_chunks", &time_ref);
 			}
+			else if (window > 59) {
+				//# load from hourly cache
+				aggregate_cache_t *match = find_aggregate_cache(uuid);
+				ESP_LOGW(TAG_HTTP, "%s HOURLY-CACHE 1hr cache", method_name);
+
+				if (match) {
+					elapse_start(&time_ref);
+					httpd_resp_send(req, (char*)match->min_records, sizeof(match->min_records));	// ~5ms
+					elapse_print("- httpd_resp_send", &time_ref);
+				}
+			}
 			else {
-				// takes about 5ms for 300 records
+				//# load from 5 minutes cache
+				// ~5ms for 300 records
+				ESP_LOGW(TAG_HTTP, "%s 5MINUTES-CACHE 5mins cache", method_name);
 				return httpd_resp_send(req, (const char*)target->sec_records, sizeof(target->sec_records));
 			}
 		}

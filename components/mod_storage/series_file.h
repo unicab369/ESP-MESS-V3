@@ -255,10 +255,10 @@ int series_file_read_latest(
 	int count = fread(output, series_size, requested_count, file);
 	fclose(file);
 
-	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
+	ESP_LOGW(TAG_RECORD, "%s READ-RECORD", method_name);
 	printf("- Read: %d/%d(max) series, Total Count: %d, next_offset: %d\n",
 			count, requested_count, header.last_series_count, header.next_offset);
-	printf("- Range: input_ts (%s) - last_ts (%s)\n", count, requested_count, input_ts, last_ts);
+	printf("- Range: input_ts (%s) - last_ts (%s)\n", input_ts, last_ts);
 	return count;
 }
 
@@ -300,7 +300,7 @@ int series_file_read_all(
 	fclose(file);
 
 	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
-	printf("- Read Completed: %d/%d series\n", count, count_to_read);
+	printf("- Read: %d/%d series\n", count, count_to_read);
 
 	return count;
 }
