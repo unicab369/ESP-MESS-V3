@@ -201,14 +201,14 @@ function initCharts(arrays) {
 					label: "Lux",
 					width: 1.5,
 					value: (u, v) => v?.toFixed(0) + " lux",
-					// stroke: "#36454F",
-					points: {
-						show: true,
-						size: 6,
-						fill: "gray",
-						stroke: "white",
-						strokeWidth: 1
-					}
+					stroke: "lightgray",
+					// points: {
+					// 	show: true,
+					// 	size: 6,
+					// 	fill: "lightgray",
+					// 	stroke: "white",
+					// 	strokeWidth: 1
+					// }
 				}
 			]
 		};

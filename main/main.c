@@ -137,10 +137,10 @@ void app_main(void) {
 	if (ret == ESP_OK) {
 		//! NOTE: for MMC D3 or CS needs to be pullup if not used otherwise it will go into SPI mode
 		ret = sd_spi_config(spi_conf0.host, spi_conf0.cs);
-		
+
 		if (ret == ESP_OK) {
 			// sd_test();
-			
+
 			//# Delete log folder
 			int mode = gpio_get_level(MODE_PIN);
 			if (mode == 0) {
@@ -188,9 +188,9 @@ void app_main(void) {
 					int year = timeinfo.tm_year - 100;// get 2 digit year, total_year = tm_year + 1900
 					int month = timeinfo.tm_mon + 1;
 					int day = timeinfo.tm_mday;
-					
+
 					cache_n_write_record(uuid, &record, year, month, day);
-					
+
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
 					// 	rotationLog_write(uuid, now, &timeinfo, &record);

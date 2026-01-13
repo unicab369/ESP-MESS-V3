@@ -45,45 +45,45 @@ esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 	atomic_tracker_start(&http_stats);
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
-	
+
 	char response[1024];
 	char *ptr = response;
 	size_t remaining = sizeof(response);
-	
+
 	// Start JSON object
 	int written = snprintf(ptr, remaining, "{\"caches\":");
 	ptr += written;
 	remaining -= written;
-	
+
 	// Add caches array
 	written = make_device_caches_str(ptr, remaining);
 	if (written == 0) return ESP_FAIL;
 	ptr += written;
 	remaining -= written;
-	
+
 	// Add comma and configs key
 	written = snprintf(ptr, remaining, ",\"cfgs\":");
 	ptr += written;
 	remaining -= written;
-	
+
 	// Add configs array
 	written = make_device_configs_str(ptr, remaining);
 	if (written == 0) return ESP_FAIL;
 	ptr += written;
 	remaining -= written;
-	
+
 	// Close JSON object
 	written = snprintf(ptr, remaining, "}");
 	ptr += written;
-	
+
 	atomic_tracker_end(&http_stats);
 	return httpd_resp_send(req, response, ptr - response);
 }
 
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
 
 	char query[128];
@@ -129,7 +129,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 		} else {
 			nvs_erase_all(NVS_HANDLER);
 		}
-		
+
 		nvs_commit(NVS_HANDLER);
 		nvs_close(NVS_HANDLER);
 		len = mod_nvs_listKeys_json(NULL, output, sizeof(output));
@@ -240,7 +240,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 				break;
 			}
 			default:
-				ret = httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN); 
+				ret = httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 				break;
 		}
 
@@ -405,9 +405,9 @@ int get_n_records(
 	fseek(file, 0, SEEK_END);
 	size_t file_size = ftell(file);
 	fseek(file, 0, SEEK_SET);
-	
+
 	size_t total_records = file_size / RECORD_SIZE;
-	
+
 	// Calculate optimal spacing for exactly n_records
 	size_t spacing;
 	if (n_records <= 1) {
@@ -417,7 +417,7 @@ int get_n_records(
 		// If we want 5 records from 100: positions 0, 25, 50, 75, 99
 		spacing = (total_records - 1) / (n_records - 1);
 	}
-	
+
 	size_t records_collected = 0;
 	size_t custom_pos = 0;
 	size_t current_record = 0;
@@ -429,7 +429,7 @@ int get_n_records(
 		size_t bytes_read = fread(read_buffer, 1, HTTP_CHUNK_SIZE, file);
 		if (!bytes_read) break;
 		size_t records_in_chunk = bytes_read / RECORD_SIZE;
-		
+
 		for (size_t i = 0; i < records_in_chunk; i++) {
 			// Use calculated spacing
 			if (current_record % (spacing + 1) == 0) {
@@ -442,11 +442,11 @@ int get_n_records(
 			if (current_record >= total_records) break;
 		}
 	}
-	
+
 	fclose(file);
 	FS_ACCESS_RELEASE();
 	printf("**** records_collected %d\n", records_collected);
-	
+
 	elapse_print("*** sd readtime", &start_time);
 	return records_collected * RECORD_SIZE;
 }
@@ -516,7 +516,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 			}
 
 			// // if window is greater than 59 minutes, get daily log
-			// make_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
+			// touch_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
 			// ESP_LOGW(TAG_HTTP, "%s REQUEST-AGGREGATE", method_name);
 			// printf("- Target File: %s\n", file_path);
 
@@ -524,7 +524,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 
 			// if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
 			// elapse_start(&time_ref);
-			// int len = record_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+			// int len = series_file_read(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
 			// FS_ACCESS_RELEASE();
 
 			// ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
@@ -615,7 +615,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	// otherwise => Rename
 	else if (new_name_len && old_name_len) {
 		ESP_LOGW(TAG_HTTP, "rename: %s -> %s", old_path, new_path);
-		
+
 		ret = sd_rename(old_path, new_path);
 		if (ret == ESP_OK) {
 			url_decode_newline(text_str);
@@ -629,7 +629,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 
 // fs_access
 esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
-	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");    
+	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
 
 	char query[128];
@@ -787,21 +787,21 @@ esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 
 int make_partition_tableStr(char *buffer) {
 	char *ptr = buffer;  // Pointer to current position
-	
+
 	esp_partition_iterator_t it = esp_partition_find(
 		ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
-	
+
 	while (it) {
 		const esp_partition_t* part = esp_partition_get(it);
 		int written = sprintf(ptr, "%s %dKB, ", part->label, (int)(part->size / 1024));
 		ptr += written;  // Move pointer forward
 		it = esp_partition_next(it);
 	}
-	
+
 	esp_partition_iterator_release(it);
 	*ptr++ = '\n';
 	*ptr = '\0';  // Null-terminate
-	return ptr - buffer; 
+	return ptr - buffer;
 }
 
 //! NOTE: Required: FreeRTOS Trace Facility
@@ -829,7 +829,7 @@ int make_detailed_sramStr(char *buffer) {
 	written = sprintf(ptr, "Blocks: %d Used + %d Free\n",
 			heap_info.allocated_blocks, heap_info.free_blocks);
 	ptr += written;
-	
+
 	// largest_free_block is the size of the largest free block in the heap
 	// minimum_free_bytes is the lifetime minimum free heap size
 	written = sprintf(ptr, "Largest Free Block: %3dK\n", heap_info.largest_free_block / 1024);
