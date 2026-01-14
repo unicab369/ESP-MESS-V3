@@ -113,7 +113,16 @@ int series_batch_insert(
 
 	// Check capacity
 	size_t total_bytes = series_size * count;
-	size_t write_pos = HEADER_SIZE + output_header->next_offset;
+	size_t write_pos = HEADER_SIZE + current_header.next_offset;
+
+	//# Check if file is full
+	if (total_bytes + current_header.next_offset > RECORD_FILE_BLOCK_SIZE) {
+		// File is full
+		fclose(f);
+		ESP_LOGE(TAG_RECORD, "%s RECORD-FULL", method_name);
+		printf("- File full: %s\n", filename);
+		return 0;
+	}
 
 	// // Handle wrap-around if needed
 	// if (output_header->next_offset + total_bytes > MAX_DATA_SIZE) {
@@ -124,7 +133,7 @@ int series_batch_insert(
 	// }
 
 	// Write the series
-	fseek(f, write_pos, SEEK_SET);								// ~200us
+	fseek(f, write_pos, SEEK_SET);							// ~200us
 	size_t written = fwrite(series, series_size, count, f);	// ~75us
 
 	if (written == 0) {

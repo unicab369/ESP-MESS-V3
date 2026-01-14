@@ -705,10 +705,12 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 			if (
 				strncmp(old_path, target, sizeof(target)) == 0 && active
 			) {
-				char datetime_str[20];
-				RTC_get_datetimeStr_fromEpoch(datetime_str, timestamp);
+				char start_time[20];
+				char end_time[20];
 				ESP_LOGE(TAG_HTTP, "%s GENERATE-RECORD", method_name);
-				printf("- Generate Records: for timestamp: %s\n", datetime_str);
+
+				RTC_get_datetimeStr_fromEpoch(start_time, timestamp);
+				printf("- For timestamp: %s\n", start_time);
 
 				rtc_date_t date = RTC_get_date(timestamp, 1970);
 				static record_t recs_to_write[WRITING_RECORDS_COUNT] = {0};
@@ -718,14 +720,19 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 				active->curr_year = 0;		//! IMPORTANT: force update filepath
 				prepare_aggregate_file(file_path, active, target_uuid, date.year, date.month, date.day);
 
+				uint32_t earliest_tstamp = timestamp - 3 * 60 * WRITING_RECORDS_COUNT;
+				uint32_t ref_timestamp = earliest_tstamp;
+				uint32_t latest_tstamp = 0;
+
 				//# generate records for 3 cycles
-				for (int i = 0; i < 4; i++) {
+				for (int n = 0; n < 3; n++) {
 					for (int i = 0; i < WRITING_RECORDS_COUNT; i++) {
-						timestamp -= 60;
-						recs_to_write[i].timestamp = timestamp;
+						recs_to_write[i].timestamp = ref_timestamp;
 						recs_to_write[i].value1 = random_int(20, 50);
 						recs_to_write[i].value2 = random_int(40, 80);
 						recs_to_write[i].value3 = random_int(0, 100);
+						ref_timestamp += 60;
+
 						// printf("[%d] timestamp: %ld, value1: %d\n", i,
 						// 		recs_to_write[i].timestamp, recs_to_write[i].value1);
 					}
@@ -741,11 +748,13 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 						ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
 						break;
 					}
+
+					latest_tstamp = ref_timestamp;
 				}
 
-				RTC_get_datetimeStr_fromEpoch(datetime_str, timestamp);
-				ESP_LOGE(TAG_HTTP, "%s EARLIEST-RECORD", method_name);
-				printf("- Earliest Record: %s\n", datetime_str);
+				RTC_get_datetimeStr_fromEpoch(start_time, earliest_tstamp);
+				RTC_get_datetimeStr_fromEpoch(end_time, latest_tstamp);
+				printf("- Generated Range: %s -> %s\n", start_time, end_time);
 			}
 		}
 	}
