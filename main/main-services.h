@@ -32,6 +32,7 @@ atomic_stats_t http_stats = {0};
 
 void SERV_RELOAD_LOGS();
 
+// /config
 esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	atomic_tracker_start(&http_stats);
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -43,6 +44,7 @@ esp_err_t HTTP_GET_CONFIG_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, response, response_len);
 }
 
+// /scan
 esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 	atomic_tracker_start(&http_stats);
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -82,6 +84,7 @@ esp_err_t HTTP_SCAN_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, response, ptr - response);
 }
 
+// /u_nvs
 esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
@@ -271,6 +274,7 @@ void FS_ACCESS_RELEASE() {
 }
 
 // fs_access
+// /s_config
 esp_err_t HTTP_SAVE_CONFIG_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
@@ -453,6 +457,7 @@ int get_n_records(
 
 
 // fs_access - internal
+// /g_rec
 esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_GET_RECORDS_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -557,6 +562,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access -internal
+// /g_file
 esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_GET_FILE_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -580,6 +586,7 @@ esp_err_t HTTP_GET_FILE_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access
+// /u_file
 esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
@@ -640,6 +647,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 #define WRITING_RECORDS_COUNT 100
 
 // fs_access: create, update, delete file
+// /u_entry
 esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_UPDATE_ENTRY_HANDLER";
 
@@ -715,8 +723,8 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 					for (int i = 0; i < WRITING_RECORDS_COUNT; i++) {
 						timestamp -= 60;
 						recs_to_write[i].timestamp = timestamp;
-						recs_to_write[i].value1 = random_int(20, 30);
-						recs_to_write[i].value2 = random_int(70, 80);
+						recs_to_write[i].value1 = random_int(20, 50);
+						recs_to_write[i].value2 = random_int(40, 80);
 						recs_to_write[i].value3 = random_int(0, 100);
 						// printf("[%d] timestamp: %ld, value1: %d\n", i,
 						// 		recs_to_write[i].timestamp, recs_to_write[i].value1);
@@ -734,6 +742,10 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 						break;
 					}
 				}
+
+				RTC_get_datetimeStr_fromEpoch(datetime_str, timestamp);
+				ESP_LOGE(TAG_HTTP, "%s EARLIEST-RECORD", method_name);
+				printf("- Earliest Record: %s\n", datetime_str);
 			}
 		}
 	}
@@ -749,6 +761,7 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access
+// /g_entry
 esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_GET_ENTRIES_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -758,7 +771,7 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	char entry_str[64] = {0};
 	char txt_str[4] = {0};
 	char bin_str[4] = {0};
-	char output[512] = {0};
+	char output[1024] = {0};
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -811,6 +824,7 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 }
 
 // fs_access -internal
+// /g_log
 esp_err_t HTTP_GET_LOG_HANDLER(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");

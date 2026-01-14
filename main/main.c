@@ -177,8 +177,8 @@ void app_main(void) {
 						// .value1 = 10,
 						// .value2 = 20,
 						// .value3 = 30
-						.value1 = random_int(20, 30),
-						.value2 = random_int(70, 80),
+						.value1 = random_int(20, 50),
+						.value2 = random_int(40, 80),
 						.value3 = random_int(0, 100),
 					};
 

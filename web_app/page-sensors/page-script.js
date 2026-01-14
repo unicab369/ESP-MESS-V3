@@ -342,12 +342,17 @@ async function reload_records(chart_id) {
 					extra: dataView.getUint16(i * RECORD_SIZE + 10, true)
 				}
 				records.push(rec)
-				console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
+				// console.log(`[${i}] Time=${rec.time}, Temp=${rec.temp}`)
 				// console.log(`Record ${i}: Time=${new Date(rec.time*1000).toLocaleString()}, Temp=${rec.temp}`)
 			}
 
 			//# Sort by time - uPlot requires ascending order
 			records.sort((a, b) => a.time - b.time);
+
+			// sorted prints
+			// for (let i = 0; i < records.length; i++) {
+			// 	console.log(`Record ${i}: Time=${new Date(records[i].time*1000).toLocaleString()}, Temp=${records[i].temp}`)
+			// }
 
 			const first = new Date(records.at(0)?.time*1000).toLocaleString()
 			const last = new Date(records.at(-1)?.time*1000).toLocaleString()
@@ -402,7 +407,7 @@ function start_update_scheduler(chart_id) {
 
 	// Update immediately once
 	reload_records(chart_id);
-	
+
 	// Set up interval
 	chartObjs[chart_id].scheduler = setInterval(() => {
 		reload_records(chart_id);

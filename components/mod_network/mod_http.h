@@ -203,7 +203,7 @@ static esp_err_t get_data_handler(httpd_req_t *req) {
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "*");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "*");
 	httpd_resp_send(req, buf, len);
-	
+
 	return ESP_OK;
 }
 
@@ -224,14 +224,13 @@ static httpd_handle_t start_webserver(void) {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 	config.max_open_sockets = 7;
-	config.uri_match_fn = httpd_uri_match_wildcard; 
-	
+	config.uri_match_fn = httpd_uri_match_wildcard;
+
 	// Configure server
 	config.stack_size = 4096;
 	config.max_uri_handlers = 20;
-	
 	ESP_LOGI(TAG_HTTP, "Starting HTTP server on port %d", config.server_port);
-	
+
 	// Start the HTTP server
 	if (httpd_start(&server, &config) == ESP_OK) {
 		// Register root handler

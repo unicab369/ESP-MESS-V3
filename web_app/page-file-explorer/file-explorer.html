@@ -21,7 +21,7 @@
 			</div>
 
 			<p>Scan for sensors</p>
-			
+
 			<div class="status-bar">
 				<div class="status-item">
 					<div>ESP32 IP</div>
@@ -32,7 +32,7 @@
 					<div id="scan-count">---</div>
 				</div>
 			</div>
-			
+
 			<div class="input-group">
 				<input type="text" id="serverIp" placeholder="ESP32 IP Address" value="10.0.0.188">
 				<button class="btn" onclick="connectToServer()">Connect</button>
@@ -46,7 +46,7 @@
 
 		<div class="chart-card">
 			<div class="chart-title">📋 Scan Results</div>
-			
+
 			<div style="margin-bottom: 15px; display: flex; gap: 20px; font-size: 18px; color: blue;">
 				<a href="#" onclick="reloadEntry('*sdcard*log', true)">/sdcard/log</a>
 				<a href="#" onclick="reloadEntry('*littlefs', true)">/littleFS</a>
@@ -56,7 +56,7 @@
 			<div id="list-container" style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; 
 							border-radius: 8px; padding: 10px; margin-bottom: 15px; background: lightgray;">
 			</div>
-			
+
 			<div id="item-container" style="display: flex; justify-content: space-between; margin-bottom: 15px;"></div>
 			<div id="button-container" style="margin-bottom: 15px; display: flex; gap: 10px; justify-content: flex-end;"></div>
 			<div id="field-modal" class="w3-modal"></div>
@@ -74,7 +74,7 @@
 					<button onclick="onEraseNSV()" class="w3-button w3-red w3-round" style="flex: 1;">
 						Delete
 					</button>
-					
+
 					<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 						Cancel
 					</button>
@@ -114,7 +114,7 @@
 					<!-- Key input -->
 					<div style="margin-bottom: 20px;">
 						<label><b>Key:</b></label>
-						<input type="text" id="field2-value" value="${key ?? ''}" class="w3-input w3-border" 
+						<input type="text" id="field2-value" value="${key ?? ''}" class="w3-input w3-border"
 								style="margin-top: 5px;" maxlength="10">
 					</div>
 
@@ -136,7 +136,7 @@
 									Delete
 								</button>`: ''
 						}
-						
+
 						<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 							Cancel
 						</button>

@@ -164,12 +164,14 @@ function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 			// For each cell
 			folders_files.forEach((item, index) => {
 				const is_file = item.split('.').length === 2
+				const file_name = is_file ? item.split('/')[0] : item
+				const file_size = is_file ? (item.split('/')[1]/1024).toFixed(2) : ''
 
 				html += is_file ?
 					`
-						<div onclick="onEditFile('${item}', false)"
+						<div onclick="onEditFile('${file_name}', false)"
 							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
-							<div style="flex: 1;">📄 ${item}</div>
+							<div style="flex: 1;">📄 ${file_name} (${file_size} KB)</div>
 						</div>
 					`
 					: `<div onclick="reloadEntry('${item}', false)"

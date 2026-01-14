@@ -583,28 +583,46 @@ void sd_list_dirs(const char *base_path, int depth) {
 }
 
 
-int sd_entries_to_json(const char *base_path, char *json, int size) {
-	if (size < 3) return 0;
+int sd_entries_to_json(const char *file_path, char *json_buff, int max_size) {
+	if (max_size < 3) return 0;
 
-	DIR *dir = opendir(base_path);
+	DIR *dir = opendir(file_path);
 	if (!dir) {
-		json[0] = '['; json[1] = ']'; json[2] = '\0';
+		json_buff[0] = '['; json_buff[1] = ']'; json_buff[2] = '\0';
 		return 2;
 	}
 
 	struct dirent *entry;
-	char *ptr = json;
+	char *ptr = json_buff;
 	*ptr++ = '[';
 	int first = 1;
+	char full_path[128];
 
 	// NO stat() calls at all!
-	while ((entry = readdir(dir)) != NULL && ptr < json + size - 4) {
+	while ((entry = readdir(dir)) != NULL && ptr < json_buff + max_size - 4) {
 		// printf("Entry: %s\n", entry->d_name);
 		if (!first) *ptr++ = ',';
 		first = 0;
+
 		*ptr++ = '"';
 		const char *s = entry->d_name;
-		while (*s && ptr < json + size - 2) *ptr++ = *s++;
+		while (*s && ptr < json_buff + max_size - 2) {
+			*ptr++ = *s++;
+		}
+
+		//# Encode file size
+		if (entry->d_type == DT_REG) {
+			strcpy(full_path, file_path);
+			strcat(full_path, "/");
+			strcat(full_path, entry->d_name);
+
+			struct stat st;
+			if (stat(full_path, &st) == 0) {
+				*ptr++ = '/';
+				int written = snprintf(ptr, json_buff + max_size - ptr, "%ld", st.st_size);
+				if (written > 0) ptr += written;
+			}
+		}
 		*ptr++ = '"';
 	}
 
@@ -612,5 +630,5 @@ int sd_entries_to_json(const char *base_path, char *json, int size) {
 	*ptr++ = ']';
 	*ptr = '\0';
 
-	return ptr - json;
+	return ptr - json_buff;
 }
