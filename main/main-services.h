@@ -1,5 +1,4 @@
 #include "mod_wifi.h"
-#include "WIFI_CRED.h"
 
 void elapse_start(uint64_t *timestamp) {
 	*timestamp = esp_timer_get_time();
@@ -233,7 +232,7 @@ esp_err_t HTTP_UPDATE_NVS_HANDLER(httpd_req_t *req) {
 				len = sizeof(val_str);
 				nvs_get_str(NVS_HANDLER, new_key, val_str, &len);
 
-				if (memcmp(new_key, "CRED", 4) == 0) {
+				if (memcmp(new_key, "pasw", 4) == 0) {
 					len = snprintf(output, sizeof(output), "{\"val\":\"\",\"typ\":33}");
 				} else {
 					len = snprintf(output, sizeof(output), "{\"val\":\"%s\",\"typ\":33}", val_str);
@@ -644,7 +643,7 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 }
 
 
-#define WRITING_RECORDS_COUNT 100
+#define WRITING_RECORDS_COUNT 330
 
 // fs_access: create, update, delete file
 // /u_entry
@@ -709,52 +708,43 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 				char end_time[20];
 				ESP_LOGE(TAG_HTTP, "%s GENERATE-RECORD", method_name);
 
-				RTC_datetimeStr_fromEpoch(start_time, timestamp, TIME_OFFSET);
+				RTC_datetimeStr(start_time, timestamp, TIME_OFFSET);
 				printf("- For timestamp: %s\n", start_time);
-
 				rtc_date_t date = RTC_get_date(timestamp, 1970, TIME_OFFSET);
-				static record_t recs_to_write[WRITING_RECORDS_COUNT] = {0};
+				date = RTC_get_date(timestamp, 1970, 0);  //# set back to UTC
 
 				char file_path[FILE_PATH_LEN];
 				active_records_t *active = find_records_store(target_uuid);
 				active->curr_year = 0;		//! IMPORTANT: force update filepath
 				prepare_aggregate_file(file_path, active, target_uuid, date.year, date.month, date.day);
 
-				uint32_t earliest_tstamp = timestamp - 3 * 60 * WRITING_RECORDS_COUNT;
-				uint32_t ref_timestamp = earliest_tstamp;
-				uint32_t latest_tstamp = 0;
+				uint32_t earliest_tstamp = timestamp - 60 * WRITING_RECORDS_COUNT;
+				uint32_t latest_tstamp = earliest_tstamp;
+				static record_t recs_to_write[WRITING_RECORDS_COUNT] = {0};
 
 				//# generate records for 3 cycles
-				for (int n = 0; n < 3; n++) {
-					for (int i = 0; i < WRITING_RECORDS_COUNT; i++) {
-						recs_to_write[i].timestamp = ref_timestamp;
-						recs_to_write[i].value1 = random_int(20, 50);
-						recs_to_write[i].value2 = random_int(40, 80);
-						recs_to_write[i].value3 = random_int(0, 100);
-						ref_timestamp += 60;
+				for (int i = 0; i < WRITING_RECORDS_COUNT; i++) {
+					recs_to_write[i].timestamp = latest_tstamp;
+					recs_to_write[i].value1 = random_int(20, 50);
+					recs_to_write[i].value2 = random_int(40, 80);
+					recs_to_write[i].value3 = random_int(0, 100);
+					latest_tstamp += 60;
 
-						// printf("[%d] timestamp: %ld, value1: %d\n", i,
-						// 		recs_to_write[i].timestamp, recs_to_write[i].value1);
-					}
-
-					file_header_t header;
-					int next_offset = series_batch_insert(file_path, &header,
-									recs_to_write, sizeof(record_t), WRITING_RECORDS_COUNT);
-					if (!next_offset) {
-						ESP_LOGE(TAG_SF, "%s INVALID-FILE", method_name);
-						break;
-					}
-					else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
-						ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
-						break;
-					}
-
-					latest_tstamp = ref_timestamp;
+					// printf("[%d] timestamp: %ld, value1: %d\n", i,
+					// 		recs_to_write[i].timestamp, recs_to_write[i].value1);
 				}
+				// Print range
+				RTC_printTimeRange("Generated range", earliest_tstamp, latest_tstamp, TIME_OFFSET);
 
-				RTC_datetimeStr_fromEpoch(start_time, earliest_tstamp, TIME_OFFSET);
-				RTC_datetimeStr_fromEpoch(end_time, latest_tstamp, TIME_OFFSET);
-				printf("- Generated Range: %s -> %s\n", start_time, end_time);
+				file_header_t header;
+				int next_offset = series_batch_insert(file_path, &header,
+								recs_to_write, sizeof(record_t), WRITING_RECORDS_COUNT);
+				if (!next_offset) {
+					ESP_LOGE(TAG_SF, "%s INVALID-FILE", method_name);
+				}
+				else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
+					ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
+				}
 			}
 		}
 	}

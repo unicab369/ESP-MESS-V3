@@ -143,14 +143,17 @@ int series_batch_insert(
 		return 0;
 	}
 
-	//# Update timestamps
-	if (current_header.start_timestamp == 0) {
-		current_header.start_timestamp = output_header->last_timestamp;
-	}
-
-	// Assuming timestamp is first 4 bytes of each element
+	//# Assuming timestamp is first 4 bytes of each element - get the last timestamp
 	const uint8_t* ptr = (const uint8_t*)series;
-	current_header.last_timestamp = *(const uint32_t*)ptr + (series_size * (count - 1));
+	uint32_t start_timestamp = *(const uint32_t*)ptr;
+	uint32_t last_timestamp = *(const uint32_t*)(ptr + series_size * (count - 1));
+
+	//# Start timestamps
+	if (current_header.start_timestamp == 0) {
+		current_header.start_timestamp = start_timestamp;
+	}
+	//# Last timestamp
+	current_header.last_timestamp = last_timestamp;
 
 	//# Update headers
 	size_t actual_bytes = written * series_size;
@@ -158,14 +161,16 @@ int series_batch_insert(
 	current_header.last_series_count += (uint32_t)written;
 	*output_header = current_header;
 
-	// Write back updated header
+	//# Write back updated header
 	fseek(f, 0, SEEK_SET);							// ~150us
 	fwrite(&current_header, 1, HEADER_SIZE, f);		// ~30us
 	fclose(f);
 
-	ESP_LOGI(TAG_RECORD, "%s INSERT-RECORD", method_name);
+	ESP_LOGE(TAG_RECORD, "%s INSERT-RECORDS", method_name);
 	printf("- Inserted: %d/%d series (total %d, next_offset %d)\n",
 			written, count, current_header.last_series_count, current_header.next_offset);
+	RTC_printTimeRange(method_name, current_header.start_timestamp,
+						current_header.last_timestamp, TIME_OFFSET);
 
 	return current_header.next_offset;
 }
@@ -212,7 +217,7 @@ int series_file_read_start(
 	int count = fread(output, series_size, series_count, file);
 	fclose(file);
 
-	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORDS", method_name);
 	printf("- Read: %d/%d series\n", count, series_count);
 
 	return count;
@@ -245,13 +250,15 @@ int series_file_read_latest(
 	}
 
 	char last_ts[20], input_ts[20];
-	RTC_datetimeStr_fromEpoch(last_ts, header.last_timestamp, TIME_OFFSET);
-	RTC_datetimeStr_fromEpoch(input_ts, timestamp, TIME_OFFSET);
+	RTC_datetimeStr(last_ts, header.last_timestamp, TIME_OFFSET);
+	RTC_datetimeStr(input_ts, timestamp, TIME_OFFSET);
 
 	//# Check if the header latest timestamp is smaller than the input
+	// batch insert controls the header's timestamps
 	if (header.last_timestamp < timestamp) {
 		ESP_LOGE(TAG_RECORD, "%s RANGE-OUTBOUND", method_name);
 		printf("- Outbound: input_ts (%s) - last_ts (%s)\n", input_ts, last_ts);
+		RTC_printTimeRange(method_name, header.start_timestamp, header.last_timestamp, TIME_OFFSET);
 		fclose(file);
 		return 0;
 	}
@@ -266,10 +273,11 @@ int series_file_read_latest(
 	int count = fread(output, series_size, requested_count, file);
 	fclose(file);
 
-	ESP_LOGW(TAG_RECORD, "%s READ-RECORD", method_name);
+	ESP_LOGW(TAG_RECORD, "%s READ-RECORDS", method_name);
 	printf("- Read: %d/%d(max) series, Total Count: %d, next_offset: %d\n",
 			count, requested_count, header.last_series_count, header.next_offset);
 	printf("- Range: input_ts (%s) - last_ts (%s)\n", input_ts, last_ts);
+	RTC_printTimeRange(method_name, header.start_timestamp, header.last_timestamp, TIME_OFFSET);
 	return count;
 }
 
@@ -309,7 +317,7 @@ int series_file_read_all(
 	fseek(file, HEADER_SIZE, SEEK_SET);
 	int count = fread(output, series_size, count_to_read, file);
 	fclose(file);
-	ESP_LOGI(TAG_RECORD, "%s READ-RECORD: %d/%d", method_name, count, count_to_read);
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORDS: %d/%d", method_name, count, count_to_read);
 
 	return count;
 }

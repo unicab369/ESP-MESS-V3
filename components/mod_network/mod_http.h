@@ -229,7 +229,7 @@ static httpd_handle_t start_webserver(void) {
 	// Configure server
 	config.stack_size = 4096;
 	config.max_uri_handlers = 20;
-	ESP_LOGI(TAG_HTTP, "Starting HTTP server on port %d", config.server_port);
+	ESP_LOGI(TAG_HTTP, "START-HTTP-SERVER port %d", config.server_port);
 
 	// Start the HTTP server
 	if (httpd_start(&server, &config) == ESP_OK) {
@@ -338,9 +338,9 @@ static httpd_handle_t start_webserver(void) {
 		};
 		httpd_register_uri_handler(server, &update_file_uri);
 
-		ESP_LOGI(TAG_HTTP, "HTTP server started successfully");
+		ESP_LOGI(TAG_HTTP, "HTTP-SERVER started");
 	} else {
-		ESP_LOGE(TAG_HTTP, "Failed to start HTTP server!");
+		ESP_LOGE(TAG_HTTP, "HTTP-SERVER failed");
 	}
 
 	return server;

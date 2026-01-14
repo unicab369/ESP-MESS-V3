@@ -176,7 +176,7 @@ int RTC_get_dateStr(char *str, rtc_date_t date, char separator, int full_year) {
 	return full_year ? 10 : 8;		// YYYY-MM-DD = 10, YYYYMMDD = 8
 }
 
-int RTC_dateStr_fromEpoch(
+int RTC_dateStr(
 	char *str, int total_seconds, char separator, int full_year, int timeOffset
 ) {
 	rtc_date_t date = RTC_get_date(total_seconds, 1970, timeOffset);
@@ -213,7 +213,7 @@ int RTC_get_timeStr(char *str, rtc_time_t time, char separator) {
 	return separator ? 8 : 6;  // HH:MM:SS = 8, HHMMSS = 6
 }
 
-int RTC_timeStr_fromEpoch(char *str, int total_seconds, char separator, int timeOffset) {
+int RTC_timeStr(char *str, int total_seconds, char separator, int timeOffset) {
 	rtc_time_t time = RTC_get_time(total_seconds, 0, timeOffset);
 	return RTC_get_timeStr(str, time, separator);
 }
@@ -221,9 +221,17 @@ int RTC_timeStr_fromEpoch(char *str, int total_seconds, char separator, int time
 
 // @ note: minimum 20 characters for safety
 
-int RTC_datetimeStr_fromEpoch(char *str, int total_seconds, int timeOffset) {
-	int date_len = RTC_dateStr_fromEpoch(str, total_seconds, '/', 0, timeOffset);
+int RTC_datetimeStr(char *str, int total_seconds, int timeOffset) {
+	int date_len = RTC_dateStr(str, total_seconds, '/', 0, timeOffset);
 	str[date_len] = ' ';
-	int time_len = RTC_timeStr_fromEpoch(str + date_len + 1, total_seconds, ':', timeOffset);
+	int time_len = RTC_timeStr(str + date_len + 1, total_seconds, ':', timeOffset);
 	return date_len + time_len + 1;
+}
+
+void RTC_printTimeRange(const char *prefix, int start, int end, int timeOffset) {
+	char start_buffer[20];
+	char end_buffer[20];
+	RTC_datetimeStr(start_buffer, start, timeOffset);
+	RTC_datetimeStr(end_buffer, end, timeOffset);
+	printf("- %s: %s -> %s\n", prefix, start_buffer, end_buffer);
 }

@@ -122,7 +122,7 @@ void app_main(void) {
 	gpio_set_pull_mode(MODE_PIN, GPIO_PULLUP_ONLY);
 
 	//# Setup Wifi
-	wifi_init_sta(EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASSWORD);
+	wifi_init_sta();
 
 	//# Init SPI1 peripherals
 	M_Spi_Conf spi_conf0 = {
@@ -172,7 +172,7 @@ void app_main(void) {
 
 			if (date.year > 2020) {
 				uint32_t uuid = 0xAABBCCDA;
-				RTC_datetimeStr_fromEpoch(datetime_str, now, TIME_OFFSET);
+				RTC_datetimeStr(datetime_str, now, TIME_OFFSET);
 				ESP_LOGI(TAG, "DATE-TIME: %s", datetime_str);
 
 				for (int i=0; i<10; i++) {
