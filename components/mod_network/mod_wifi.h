@@ -51,6 +51,8 @@ bool is_wifi_connected() {
 static httpd_handle_t web_server = NULL;
 
 void wifi_poll() {
+	const char method_name[] = "wifi_poll";
+
 	static bool connected = false;
 	static uint32_t last_attempt = 0;
 	bool current = is_wifi_connected();
@@ -59,13 +61,13 @@ void wifi_poll() {
 	if (current != connected) {
 		if (current) {
 			ESP_LOGI(TAG_WIFI, "WiFi connected!");
-			
-			
+
 			// Start HTTP server when WiFi connects
 			if (web_server == NULL) {
 				uint8_t mac[6];
 				esp_read_mac(mac, ESP_MAC_WIFI_STA);
-				ESP_LOGW(TAG_WIFI, "WiFi STA MAC: %02X:%02X:%02X:%02X:%02X:%02X", 
+				ESP_LOGW(TAG_WIFI, "%s MAC-ADDR: %02X:%02X:%02X:%02X:%02X:%02X",
+						method_name,
 						mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
 				//# START NTP
@@ -77,10 +79,10 @@ void wifi_poll() {
 				//# START MDNS
 				esp_err_t err = mdns_init();
 				if (err != ESP_OK) {
-					ESP_LOGE(TAG_WIFI, "mdns_init failed: %d", err);
+					ESP_LOGE(TAG_WIFI, "%s MDNS-FAILED: %d", method_name, err);
 				} else {
 					char hostname[32];
-					snprintf(hostname, sizeof(hostname), "esp32-%02X%02X%02X%02X", 
+					snprintf(hostname, sizeof(hostname), "esp32-%02X%02X%02X%02X",
 							mac[2], mac[3], mac[4], mac[5]);
 					// Set hostname: hostname.local
 					mdns_hostname_set(hostname);
@@ -94,13 +96,13 @@ void wifi_poll() {
 				}
 			}
 		} else {
-			ESP_LOGI(TAG_WIFI, "WiFi disconnected");
-			
+			ESP_LOGI(TAG_WIFI, "%s WIFI-DISCONNECTED", method_name);
+
 			// Stop HTTP server when WiFi disconnects
 			if (web_server != NULL) {
 				httpd_stop(web_server);
 				web_server = NULL;
-				ESP_LOGI(TAG_WIFI, "HTTP server stopped");
+				ESP_LOGI(TAG_WIFI, "%s SERVER-STOPPED", method_name);
 			}
 		}
 		connected = current;
@@ -110,9 +112,9 @@ void wifi_poll() {
 
 		if (ntp_status == SNTP_SYNC_STATUS_COMPLETED) {
 			ntp_load_time();
-			ESP_LOGI(TAG_WIFI, "NTP synced: %s", GET_DATE_TIME_STR);
+			ESP_LOGI(TAG_WIFI, "%s NTP-SYNCED", method_name);
 		} else {
-			ESP_LOGI(TAG_WIFI, "NTP syncing ...");
+			ESP_LOGI(TAG_WIFI, "%s NTP-SYNCING...", method_name);
 		}
 
 	}
@@ -121,17 +123,19 @@ void wifi_poll() {
 	uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
 	if (!connected && (now - last_attempt > 10000)) {
-		ESP_LOGI(TAG_WIFI, "Attempting WiFi connection...");
+		ESP_LOGI(TAG_WIFI, "%s WIFI-STATUS: connecting...", method_name);
+
 		esp_err_t err = esp_wifi_connect();
 		if (err == ESP_OK) {
 			last_attempt = now;
 		} else {
-			ESP_LOGE(TAG_WIFI, "Failed to start connection: %s", esp_err_to_name(err));
+			ESP_LOGE(TAG_WIFI, "%s WIFI-FAILED: %s", method_name, esp_err_to_name(err));
 		}
 	}
 }
 
 void wifi_init_sta(const char* sta_ssid, const char* sta_passwd) {
+	const char method_name[] = "wifi_init_sta";
 	ESP_ERROR_CHECK(esp_netif_init());
 
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -158,10 +162,10 @@ void wifi_init_sta(const char* sta_ssid, const char* sta_passwd) {
 	// Copy the SSID and password into the configuration structure
 	strncpy((char*)wifi_config.sta.ssid, sta_ssid, sizeof(wifi_config.sta.ssid));
 	strncpy((char*)wifi_config.sta.password, sta_passwd, sizeof(wifi_config.sta.password));
-	
+
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
 	ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
 	ESP_ERROR_CHECK(esp_wifi_start() );
 
-	ESP_LOGI(TAG_WIFI, "wifi_init_sta finished.");
+	ESP_LOGI(TAG_WIFI, "%s FINISHED-INIT", method_name);
 }

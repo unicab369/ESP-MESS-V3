@@ -161,7 +161,7 @@ async function service_getEntries(entry, onComplete) {
 		}
 	}
 	catch(error) {
-		console.error('Connection error:', error)	
+		console.error('Connection error:', error)
 	}
 }
 
@@ -172,10 +172,15 @@ async function service_updateEntry(new_path, old_path, is_file, onComplete) {
 	// has new_path, no old_path => Create
 	// no new_path, has old_path => Delete
 	// has new_path, has old_path => Update
+
+	const now = new Date()
+	const timezoneOffset = now.getTimezoneOffset() * 60	// offset is in minutes convert to seconds
+
 	const params = new URLSearchParams({
 		new: new_path,
 		old: old_path,
-		file: is_file
+		file: is_file,
+		tm: Math.floor(now.getTime()/1000 - timezoneOffset)
 	})
 
 	try {

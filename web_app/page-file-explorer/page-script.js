@@ -58,7 +58,7 @@ function reloadNVS(sub_entry = 'nvs') {
 			sorted.forEach((item, index) => {
 				html += /*html*/
 					`
-						<div onclick="onEditNVS('${item}')" 
+						<div onclick="onEditNVS('${item}')"
 							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 							<div style="flex: 1;">${item[0]}/${item[1]} (${nvs_type_map[item[2]]})</div>
 
@@ -105,7 +105,7 @@ function onUpdateNVS(old_namespace, old_key) {
 	const value = document.getElementById('field3-value').value.trim()
 	const type = document.getElementById('select-value').value
 	console.log("onUpdateNVS:", namespace, new_key, value, type)
-	
+
 	if (namespace.length == 0 || new_key.length == 0 || value.length == 0 || !type) {
 		alert('Please enter Required values')
 		return
@@ -143,16 +143,16 @@ function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 
 		// show error if there are more than 1 PATH_ENTRIES
 		if (PATH_ENTRIES.length < 2) html = ``
-		
+
 		// Sort folders first
 		folders_files = result.sort((a, b) => {
 			const aIsFolder = !a.includes('.')
 			const bIsFolder = !b.includes('.')
-			
+
 			// If one is folder and other isn't, folder comes first
 			if (aIsFolder && !bIsFolder) return -1
 			if (!aIsFolder && bIsFolder) return 1
-			
+
 			// Both are same type, sort alphabetically
 			return a.localeCompare(b)
 		})
@@ -167,23 +167,23 @@ function reloadEntry(sub_entry = '*sdcard*log', restart = true) {
 
 				html += is_file ?
 					`
-						<div onclick="onEditFile('${item}', false)" 
+						<div onclick="onEditFile('${item}', false)"
 							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 							<div style="flex: 1;">📄 ${item}</div>
 						</div>
 					`
-					: `<div onclick="reloadEntry('${item}', false)" 
+					: `<div onclick="reloadEntry('${item}', false)"
 							style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 10px;">
 						<div style="flex: 1;">📁 ${item}</div>
 
-						<div onclick="event.stopPropagation(); onEditEntry('${index}')" 
+						<div onclick="event.stopPropagation(); onEditEntry('${index}')"
 							style="background: gray; color: white; padding: 5px 12px; border-radius: 10px;">
 							✎ Edit
 						</div>
 					</div>`
 			})
 		}
-		
+
 		document.getElementById('list-container').innerHTML = html
 		document.getElementById('button-container').innerHTML = /*html*/
 			`<button class="btn" onclick="onCreateFolder()">📂 Add Folder</button>
@@ -196,11 +196,11 @@ function onCreateFolder() {
 		<button onclick="handleUpdateEntry('', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
 			Create
 		</button>
-		
+
 		<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 			Cancel
 		</button>`
-	)	
+	)
 }
 
 function handleModifyFile(old_path = '') {
@@ -241,7 +241,7 @@ function onEditFile(old_name) {
 				<button onclick="handleModifyFile('${old_path}')" class="w3-button w3-blue w3-round" style="flex: 1;">
 					Update
 				</button>
-				
+
 				<button onclick="handleDeleteFile('${old_path}')" class="w3-button w3-red w3-round" style="flex: 1;">
 					Delete
 				</button>
@@ -249,14 +249,14 @@ function onEditFile(old_name) {
 				<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 					Cancel
 				</button>`
-			)	
+			)
 		})
 	} else {
 		show_textArea_modal('Create File', '', '', `
 			<button onclick="handleModifyFile()" class="w3-button w3-blue w3-round" style="flex: 1;">
 				Create
 			</button>
-			
+
 			<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 				Cancel
 			</button>`
@@ -271,11 +271,11 @@ function onEditEntry(index) {
 		`<button onclick="handleUpdateEntry('${old_name}', 0)" class="w3-button w3-blue w3-round" style="flex: 1;">
 			Update
 		</button>
-		
+
 		<button onclick="handleUpdateEntry('${old_name}', 1)" class="w3-button w3-red w3-round" style="flex: 1;">
 			Delete
 		</button>
-		
+
 		<button onclick="close_field_modal()" class="w3-button w3-gray w3-round" style="flex: 1;">
 			Cancel
 		</button>`

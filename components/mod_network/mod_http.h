@@ -343,7 +343,7 @@ static httpd_handle_t start_webserver(void) {
 	} else {
 		ESP_LOGE(TAG_HTTP, "Failed to start HTTP server!");
 	}
-	
+
 	return server;
 }
 
@@ -352,22 +352,22 @@ static httpd_handle_t start_webserver(void) {
 static void url_decode_inplace(char *str) {
     char *src = str;
     char *dst = str;
-    
+
     while (*src) {
         if (src[0] == '%' && src[1] && src[2]) {
             // Decode %XX hex to char
             char c1 = src[1];
             char c2 = src[2];
-            
+
             uint8_t val = 0;
             if (c1 >= '0' && c1 <= '9') val = (c1 - '0') << 4;
             else if (c1 >= 'A' && c1 <= 'F') val = (c1 - 'A' + 10) << 4;
             else if (c1 >= 'a' && c1 <= 'f') val = (c1 - 'a' + 10) << 4;
-            
+
             if (c2 >= '0' && c2 <= '9') val |= (c2 - '0');
             else if (c2 >= 'A' && c2 <= 'F') val |= (c2 - 'A' + 10);
             else if (c2 >= 'a' && c2 <= 'f') val |= (c2 - 'a' + 10);
-            
+
             *dst++ = (char)val;
             src += 3;
         } else if (*src == '+') {
@@ -383,7 +383,7 @@ static void url_decode_inplace(char *str) {
 // Decode new line only - %0A and %0D
 static void url_decode_newline(char *str) {
     char *d = str;
-    
+
     while (*str) {
         if (str[0] == '%' && str[1] == '0' && (str[2] == 'A' || str[2] == 'a')) {
             *d++ = '\n'; str += 3;

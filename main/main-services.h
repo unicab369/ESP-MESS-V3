@@ -350,7 +350,7 @@ esp_err_t http_send_file_chunks(httpd_req_t *req, void *buffer, const char *path
 	return ESP_OK;
 }
 
-int http_send_record_chunks(httpd_req_t *req, char *path, char *buffer) {
+int http_send_record_chunks(httpd_req_t *req, char *path, char *chunk_buffer) {
 	if (!FS_ACCESS_START(req)) return 0;
 	const char method_name[] = "http_send_record_chunks";
 	FILE* file = fopen(path, "rb");		// ~7.0ms
@@ -369,12 +369,12 @@ int http_send_record_chunks(httpd_req_t *req, char *path, char *buffer) {
 	fread(&header, 1, HEADER_SIZE, file);
 
 	// ~3ms to read a chunk
-	while ((bytes_read = fread(buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
+	while ((bytes_read = fread(chunk_buffer, 1, HTTP_CHUNK_SIZE, file)) > 0) {
 		// uint32_t f_timestamp = *(uint32_t*)buffer;
         // printf("*** f_timestamp: %ld\n", f_timestamp);
 
 		// Send entire chunk
-		if (httpd_resp_send_chunk(req, buffer, bytes_read) != ESP_OK) {
+		if (httpd_resp_send_chunk(req, chunk_buffer, bytes_read) != ESP_OK) {
 			ESP_LOGE(TAG_HTTP, "Err %s sending_chunk", method_name);
 			fclose(file);
 			FS_ACCESS_RELEASE();
@@ -508,7 +508,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 	if (target) {
 		if (year > 0 && month > 0 && day > 0) {
 			if (window > 299) {
-				touch_aggregate_filePath(file_path, uuid, year%100, month, day, target->file_index);
+				touch_series_filePath(file_path, uuid, year%100, month, day, target->file_index);
 				ESP_LOGW(TAG_HTTP, "%s RECORD-FILE", method_name);
 				printf("- Target File: %s\n", file_path);
 
@@ -516,22 +516,24 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 
 				if (!FS_ACCESS_START(req)) return httpd_resp_send_chunk(req, NULL, 0);
 				elapse_start(&time_ref);
-				int len = series_file_read_all(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~10ms
+				int len = series_file_read_all(&header, file_path, HTTP_FILE_BUFFER, RECORD_SIZE, 200);	// ~15ms
+				elapse_print("- file read", &time_ref);
 				FS_ACCESS_RELEASE();
 
-				ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~5.5ms
+				elapse_start(&time_ref);
+				ret = httpd_resp_send(req, HTTP_FILE_BUFFER, len * RECORD_SIZE);					// ~7ms
 				elapse_print("- httpd_resp_send", &time_ref);
 				printf("- startTime: %ld, latestTime: %ld\n", header.start_timestamp, header.last_timestamp);
 				return ret;
 
 				// elapse_start(&time_ref);
-				// http_send_record_chunks(req, file_path, buffer);				// ~25ms YUCK
-				// elapse_print("**** http_send_record_chunks", &time_ref);
+				// http_send_record_chunks(req, file_path, HTTP_FILE_BUFFER);				// ~25ms YUCK
+				// elapse_print("- http_send_record_chunks", &time_ref);
 			}
 			else if (window > 59) {
 				//# load from hourly cache
 				aggregate_cache_t *match = find_aggregate_cache(uuid);
-				ESP_LOGW(TAG_HTTP, "%s HOURLY-CACHE 1hr cache", method_name);
+				ESP_LOGW(TAG_HTTP, "%s HOURLY-CACHE", method_name);
 
 				if (match) {
 					elapse_start(&time_ref);
@@ -542,7 +544,7 @@ esp_err_t HTTP_GET_RECORDS_HANDLER(httpd_req_t *req) {
 			else {
 				//# load from 5 minutes cache
 				// ~5ms for 300 records
-				ESP_LOGW(TAG_HTTP, "%s 5MINUTES-CACHE 5mins cache", method_name);
+				ESP_LOGW(TAG_HTTP, "%s 5MINUTES-CACHE", method_name);
 				return httpd_resp_send(req, (const char*)target->sec_records, sizeof(target->sec_records));
 			}
 		}
@@ -634,8 +636,13 @@ esp_err_t HTTP_UPDATE_FILE_HANDLER(httpd_req_t *req) {
 	return httpd_resp_send(req, "OK", HTTPD_RESP_USE_STRLEN);
 }
 
-// fs_access
+
+#define WRITING_RECORDS_COUNT 100
+
+// fs_access: create, update, delete file
 esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
+	const char method_name[] = "HTTP_UPDATE_ENTRY_HANDLER";
+
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "text/plain");
 
@@ -643,6 +650,7 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	char new_path[64] = {0};
 	char old_path[64] = {0};
 	char isFile_str[4] = {0};
+	char timestamp_str[16] = {0};
 
 	size_t query_len = httpd_req_get_url_query_len(req) + 1;
 	if (query_len > sizeof(query)) query_len = sizeof(query);
@@ -650,7 +658,8 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	if (httpd_req_get_url_query_str(req, query, query_len) == ESP_OK) {
 		httpd_query_key_value(query, "new", new_path, sizeof(new_path));
 		httpd_query_key_value(query, "old", old_path, sizeof(old_path));
-		httpd_query_key_value(query, "isFile_str", old_path, sizeof(isFile_str));
+		httpd_query_key_value(query, "file", isFile_str, sizeof(isFile_str));
+		httpd_query_key_value(query, "tm", timestamp_str, sizeof(timestamp_str));
 	}
 	// replace '*' with '/'
 	for (char *p = new_path; *p; p++) if (*p == '*') *p = '/';
@@ -660,6 +669,7 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 	int new_name_len = strlen(new_path);
 	int old_name_len = strlen(old_path);
 	int is_file = atoi(isFile_str);
+	uint32_t timestamp = atoi(timestamp_str);
 
 	//# FS_ACCESS: start here to allow other tasks to work while this handler get to this point
 	// concurrent requests will be waiting here, they all have their own stack so their variables are safe
@@ -667,22 +677,70 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 
 	// no old_name => Create
 	if (!old_name_len) {
-		ESP_LOGW(TAG_HTTP, "create: %s", new_path);
+		ESP_LOGW(TAG_HTTP, "%s CREATE-ENTRY", method_name);
+		printf("- Entry: %s\n", new_path);
 		sd_ensure_dir(new_path);
 	}
 	// no new_name => Delete
 	else if (!new_name_len) {
-		ESP_LOGW(TAG_HTTP, "remove: %s", old_path);
+		ESP_LOGW(TAG_HTTP, "%s DELETE-ENTRY", method_name);
+		printf("- Deleting Entry: %s\n", old_path);
 
 		if (is_file) {
 			sd_remove_file(old_path);
 		} else {
 			sd_remove_dir_recursive(old_path);
+			const char target[] = "/sdcard/log/AABBCCDA/26";
+			uint32_t target_uuid = 0xAABBCCDA;
+			active_records_t *active = find_records_store(target_uuid);
+
+			if (
+				strncmp(old_path, target, sizeof(target)) == 0 && active
+			) {
+				char datetime_str[20];
+				RTC_get_datetimeStr_fromEpoch(datetime_str, timestamp);
+				ESP_LOGE(TAG_HTTP, "%s GENERATE-RECORD", method_name);
+				printf("- Generate Records: for timestamp: %s\n", datetime_str);
+
+				rtc_date_t date = RTC_get_date(timestamp, 1970);
+				static record_t recs_to_write[WRITING_RECORDS_COUNT] = {0};
+
+				char file_path[FILE_PATH_LEN];
+				active_records_t *active = find_records_store(target_uuid);
+				active->curr_year = 0;		//! IMPORTANT: force update filepath
+				prepare_aggregate_file(file_path, active, target_uuid, date.year, date.month, date.day);
+
+				//# generate records for 3 cycles
+				for (int i = 0; i < 4; i++) {
+					for (int i = 0; i < WRITING_RECORDS_COUNT; i++) {
+						timestamp -= 60;
+						recs_to_write[i].timestamp = timestamp;
+						recs_to_write[i].value1 = random_int(20, 30);
+						recs_to_write[i].value2 = random_int(70, 80);
+						recs_to_write[i].value3 = random_int(0, 100);
+						// printf("[%d] timestamp: %ld, value1: %d\n", i,
+						// 		recs_to_write[i].timestamp, recs_to_write[i].value1);
+					}
+
+					file_header_t header;
+					int next_offset = series_batch_insert(file_path, &header,
+									recs_to_write, sizeof(record_t), WRITING_RECORDS_COUNT);
+					if (!next_offset) {
+						ESP_LOGE(TAG_SF, "%s INVALID-FILE", method_name);
+						break;
+					}
+					else if (next_offset > RECORD_FILE_BLOCK_SIZE) {
+						ESP_LOGE(TAG_SF, "%s FILE-FULL", method_name);
+						break;
+					}
+				}
+			}
 		}
 	}
 	// otherwise => Rename
 	else if (new_name_len && old_name_len) {
-		ESP_LOGW(TAG_HTTP, "rename: %s -> %s", old_path, new_path);
+		ESP_LOGW(TAG_HTTP, "%s RENAME-ENTRY", method_name);
+		printf("- Entry: %s -> %s\n", old_path, new_path);
 		ret = sd_rename(old_path, new_path);
 	}
 
@@ -695,7 +753,6 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 	const char method_name[] = "HTTP_GET_ENTRIES_HANDLER";
 	httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 	httpd_resp_set_type(req, "application/json");
-	ESP_LOGI(TAG_HTTP, "%s", method_name);
 
 	char query[128];
 	char entry_str[64] = {0};
@@ -729,7 +786,9 @@ esp_err_t HTTP_GET_ENTRIES_HANDLER(httpd_req_t *req) {
 		if (*p == '*') *p = '/';
 	}
 
-	ESP_LOGW(TAG_HTTP, "path %s", entry_str);
+	ESP_LOGI(TAG_HTTP, "%s GET-ENTRY", method_name);
+	printf("- Entry: %s\n", entry_str);
+
 	int is_txt = atoi(txt_str);
 	int is_bin = atoi(bin_str);
 	int len = 0;

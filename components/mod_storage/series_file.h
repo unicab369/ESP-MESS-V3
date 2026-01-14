@@ -267,7 +267,7 @@ int series_file_read_all(
 	file_header_t *header, const char* filename,
 	void* output, size_t series_size, int series_count
 ) {
-	const char method_name[] = "series_file_read";
+	const char method_name[] = "series_file_read_all";
 
 	FILE* file = fopen(filename, "rb");
 	if (!file) {
@@ -298,9 +298,7 @@ int series_file_read_all(
 	fseek(file, HEADER_SIZE, SEEK_SET);
 	int count = fread(output, series_size, count_to_read, file);
 	fclose(file);
-
-	ESP_LOGI(TAG_RECORD, "%s READ-RECORD", method_name);
-	printf("- Read: %d/%d series\n", count, count_to_read);
+	ESP_LOGI(TAG_RECORD, "%s READ-RECORD: %d/%d", method_name, count, count_to_read);
 
 	return count;
 }

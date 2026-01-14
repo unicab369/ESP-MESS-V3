@@ -27,26 +27,6 @@ time_t time_now(void) {
 	return base_time + (elapsed_us / 1000000LL);
 }
 
-struct tm timeinfo_now(void) {
-	time_t now = time_now();
-	struct tm timeinfo;
-	localtime_r(&now, &timeinfo);
-	return timeinfo;	
-}
-
-char* time_make_str(const char *format) {
-	static char buf[64];
-	struct tm timeinfo = timeinfo_now();
-	strftime(buf, sizeof(buf), format, &timeinfo);  // Time only
-	return buf;
-}
-
-#define GET_TIME_STR time_make_str("%H:%M:%S")
-#define GET_DATE_TIME_STR time_make_str("%Y-%m-%d %H:%M:%S")
-#define GET_SHORT_DATE_STR time_make_str("%Y%m%d")
-
-
-
 void ntp_init(void) {
 	// Simple config with one server
 	esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");

@@ -8,6 +8,10 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 
+int random_int(int min, int max) {
+	return min + rand() % (max - min + 1);
+}
+
 #include "main-services.h"
 
 #define MAIN_TASK_INTERVAL_US 2 * 1000000	// 2 seconds
@@ -17,10 +21,6 @@
 static const char *TAG = "#APP";
 
 cycle_t main_cycle;
-
-int random_int(int min, int max) {
-	return min + rand() % (max - min + 1);
-}
 
 void toggle_led() {
 	static uint8_t s_led_state = 0;
@@ -105,7 +105,7 @@ void app_main(void) {
 	esp_err_t ret;
 	FS_MUTEX = xSemaphoreCreateMutex();
 	ESP_LOGI(TAG, "APP START");
-	
+
 	//! nvs_flash required for WiFi, ESP-NOW, and other stuff.
 	mod_nvs_setup();
 	SERV_RELOAD_LOGS();
@@ -164,13 +164,11 @@ void app_main(void) {
 
 		//# Interval check
 		if (now_us - last_timestamp_us >= MAIN_TASK_INTERVAL_US) {
-			struct tm timeinfo = timeinfo_now();
+			uint32_t now = (uint32_t)time_now();
+			rtc_date_t date = RTC_get_date(now, 1970);
 
-			if (timeinfo.tm_year > 70) {
-				// year number starts at 1900, epoch year is 1970
-				ESP_LOGI(TAG, "T%s", GET_TIME_STR);
+			if (date.year > 2020) {
 				uint32_t uuid = 0xAABBCCDA;
-				uint32_t now = (uint32_t)time_now();
 
 				for (int i=0; i<10; i++) {
 					record_t record = {
@@ -185,11 +183,7 @@ void app_main(void) {
 
 					uuid += i;
 					cache_device(uuid, now);
-					int year = timeinfo.tm_year - 100;// get 2 digit year, total_year = tm_year + 1900
-					int month = timeinfo.tm_mon + 1;
-					int day = timeinfo.tm_mday;
-
-					cache_n_write_record(uuid, &record, year, month, day);
+					cache_n_write_record(uuid, &record, date.year, date.month, date.day);
 
 					//# Take mutex
 					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {

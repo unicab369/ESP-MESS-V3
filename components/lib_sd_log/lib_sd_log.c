@@ -53,7 +53,6 @@ esp_err_t sd_spi_config(uint8_t spi_host, uint8_t cs_pin) {
 		host.pwr_ctrl_handle = pwr_ctrl_handle;
 	#endif
 
-	
 	// This initializes the slot without card detect (CD) and write protect (WP) signals.
 	// Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
 	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
@@ -165,7 +164,7 @@ int sd_card_info(char *buffer) {
 		return 0;
 	}
 
-	char *ptr = buffer; 
+	char *ptr = buffer;
 	int MEGABYTE = 1024 * 1024;
 	char card_name[16];
 	uint64_t physical_capacity = (uint64_t)card->csd.capacity * card->csd.sector_size;
@@ -173,12 +172,12 @@ int sd_card_info(char *buffer) {
 	int written = sprintf(ptr, "SD Name: %s, %lldMB %ldMHz\n",
 		card_name, physical_capacity / MEGABYTE, card->max_freq_khz / 1000);
 	ptr += written;
-	
+
 	// 2. Filesystem info (from FATFS)
 	FATFS* fs;
 	DWORD free_clusters;
 	FRESULT res = f_getfree("0:/", &free_clusters, &fs);
-	
+
 	if (res != FR_OK) {
 		ESP_LOGE(TAG_SF, "Err: f_getfree %d", res);
 		return ptr - buffer;
@@ -187,7 +186,7 @@ int sd_card_info(char *buffer) {
 	uint64_t fs_total = (uint64_t)(fs->n_fatent - 2) * fs->csize * 512;
 	uint64_t fs_free = (uint64_t)free_clusters * fs->csize * 512;
 	uint64_t fs_used = fs_total - fs_free;
-	
+
 	written = sprintf(ptr, "FAT %lldM = %lldM (%lld%% Used) + %lldM (Free)\n", 
 			fs_total / MEGABYTE, fs_used*100/fs_total, fs_used / MEGABYTE, fs_free / MEGABYTE);
 	ptr += written;
@@ -206,7 +205,7 @@ void storage_sd_format_card() {
 
 esp_err_t sd_rename(const char *old_path, const char *new_path) {
 	esp_err_t ret = rename(old_path, new_path);
-	
+
 	if (ret != ESP_OK) {
 		ESP_LOGE(TAG_SF, "Err: sd_rename (%s)", esp_err_to_name(ret));
 		return ret;
@@ -216,7 +215,7 @@ esp_err_t sd_rename(const char *old_path, const char *new_path) {
 
 esp_err_t sd_remove_file(const char *path) {
 	esp_err_t ret = remove(path);
-	
+
 	if (ret != ESP_OK) {
 		ESP_LOGE(TAG_SF, "Err: sd_remove_file (%s)", esp_err_to_name(ret));
 		return ret;
@@ -253,16 +252,16 @@ size_t sd_read_file(const char *path, char *buff, size_t len) {
 		ESP_LOGE(TAG_SF, "Err sd_read_file: %s", path);
 		return 0;
 	}
-	
+
 	// Read directly with manual tracking
 	size_t count = 0;
 	int c;
-	
+
 	// -1 to leave room for null terminator
 	while (count < len - 1 && (c = fgetc(f)) != EOF) {
 		buff[count++] = c;
 	}
-	
+
 	buff[count] = '\0';
 	fclose(f);
 	return count;
@@ -274,23 +273,23 @@ size_t sd_read_tail(const char *path, char *out, size_t max) {
 		ESP_LOGE(TAG_SF, "Err sd_read_tail: %s", path);
 		return 0;
 	}
-    
+
     // All in local registers where possible
     long sz;
     fseek(f, 0, SEEK_END);
     sz = ftell(f);
-    
+
     if (sz <= 0) {
         fclose(f);
         out[0] = '\0';
         return 0;
     }
-    
+
     // Single conditional
     size_t n = (sz < max) ? sz : max;
     fseek(f, -n, SEEK_END);
     n = fread(out, 1, n, f);  // Reuse n for actual read count
-    
+
     fclose(f);
     out[n] = '\0';
     return n;
@@ -331,13 +330,13 @@ void rotate_log_write(rotate_log_t *log, const char *msg) {
 	// Close every x lines
 	if (log->lines % log->CLOSE_LINES == 0) {
 		if (log->file) fclose(log->file);
-		
+
 		// Rotate to next file every x lines
 		if (log->lines >= log->MAX_LINES) {
 			log->file_num = (log->file_num + 1) % ROTATE_LOG_FILE_COUNT;
 			log->lines = 0;
 		}
-		
+
 		// Open current file
 		char path[64];
 		snprintf(path, sizeof(path), SD_POINT"/log/%s_%d.txt", log->prefix, log->file_num);
@@ -378,7 +377,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 		// Get file size first
 		fseek(f, 0, SEEK_END);
 		long size = ftell(f);
-		
+
 		// Safe seek (don't seek before file start)
 		size_t to_read = (size < buffer_size - 1) ? size : buffer_size - 1;
 
@@ -389,7 +388,7 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 		fclose(f);
 	}
 
-	//# File 2: Previous 
+	//# File 2: Previous
 	if (total < buffer_size && ROTATE_LOG_FILE_COUNT > 1) {
 		int prev = (log->file_num - 1 + ROTATE_LOG_FILE_COUNT) % ROTATE_LOG_FILE_COUNT;
 
@@ -399,10 +398,10 @@ size_t rotate_log_get_latest(rotate_log_t *log, char *buffer, size_t buffer_size
 		if (f) {
 			fseek(f, 0, SEEK_END);
 			long size = ftell(f);
-			
+
 			size_t need = buffer_size - total - 1;  // -1 for null terminator
 			size_t to_read = (size < need) ? size : need;
-			
+
 			if (to_read > 0) {
 				fseek(f, -to_read, SEEK_END);
 				total += fread(buffer + total, 1, to_read, f);
@@ -443,9 +442,11 @@ void log_to_sd(rotate_log_t *log, const char *tag, const char *format, ...) {
 
 // remove directory recursively
 int sd_remove_dir_recursive(const char* path) {
+	const char method_name[] = "sd_remove_dir_recursive";
+
 	DIR* dir = opendir(path);
 	if (!dir) {
-		ESP_LOGE(TAG_SF, "Err open directory: %s", path);
+		ESP_LOGE(TAG_SF, "%s NOT-FOUND: %s", method_name, path);
 		return 0;
 	}
 
@@ -458,16 +459,16 @@ int sd_remove_dir_recursive(const char* path) {
 		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
 			continue;
 		}
-		
+
 		// Build full path
 		snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
-		
+
 		struct stat statbuf;
 		if (stat(full_path, &statbuf) != 0) {
-			ESP_LOGW(TAG_SF, "Cannot stat: %s", full_path);
+			ESP_LOGW(TAG_SF, "%s NO-STAT: %s", method_name, full_path);
 			continue;
 		}
-		
+
 		if (S_ISDIR(statbuf.st_mode)) {
 			// Recursively remove subdirectory
 			if (!sd_remove_dir_recursive(full_path)) {
@@ -476,11 +477,10 @@ int sd_remove_dir_recursive(const char* path) {
 		} else {
 			// Remove file
 			if (remove(full_path) != 0) {
-				ESP_LOGE(TAG_SF, "Err remove file %s, error: %d", 
-						full_path, errno);
+				ESP_LOGE(TAG_SF, "%s REMOVE-FILE: %s, error: %d", method_name, full_path, errno);
 				success = 0;
 			} else {
-				ESP_LOGI(TAG_SF, "Removed file: %s", full_path);
+				ESP_LOGI(TAG_SF, "%s REMOVE-FILE: %s", method_name, full_path);
 			}
 		}
 	}
@@ -489,12 +489,11 @@ int sd_remove_dir_recursive(const char* path) {
 
 	// Now remove the (hopefully) empty directory
 	if (rmdir(path) != 0) {
-		ESP_LOGE(TAG_SF, "remove dir err %s, error: %d", 
-				path, errno);
+		ESP_LOGE(TAG_SF, "%s REMOVE-DIR: err %s, error: %d", method_name, path, errno);
 		return 0;
 	}
 
-	ESP_LOGI(TAG_SF, "Removed dir: %s", path);
+	ESP_LOGI(TAG_SF, "%s REMOVE-DIR: %s", method_name, path);
 	return success;
 }
 
@@ -556,22 +555,22 @@ void sd_list_dirs(const char *base_path, int depth) {
 		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 		// Create full path
 		snprintf(path, sizeof(path), "%s/%s", base_path, entry->d_name);
-		
+
 		// Get file/directory information
 		if (stat(path, &file_stat) == -1) {
 			ESP_LOGW(TAG_SF, "Failed to stat %s", path);
 			continue;
 		}
-		
+
 		// Create indentation for hierarchy
 		char indent[16];
 		memset(indent, ' ', depth * 2);
 		indent[depth * 2] = '\0';
-		
+
 		if (S_ISDIR(file_stat.st_mode)) {
 			// It's a directory
 			ESP_LOGW(TAG_SF, "%s📁 %s/", indent, entry->d_name);
-			
+
 			// Recursively list subdirectory
 			sd_list_dirs(path, depth + 1);
 		} else {
@@ -586,18 +585,18 @@ void sd_list_dirs(const char *base_path, int depth) {
 
 int sd_entries_to_json(const char *base_path, char *json, int size) {
 	if (size < 3) return 0;
-	
+
 	DIR *dir = opendir(base_path);
 	if (!dir) {
 		json[0] = '['; json[1] = ']'; json[2] = '\0';
 		return 2;
 	}
-	
+
 	struct dirent *entry;
 	char *ptr = json;
 	*ptr++ = '[';
 	int first = 1;
-	
+
 	// NO stat() calls at all!
 	while ((entry = readdir(dir)) != NULL && ptr < json + size - 4) {
 		// printf("Entry: %s\n", entry->d_name);
@@ -608,7 +607,7 @@ int sd_entries_to_json(const char *base_path, char *json, int size) {
 		while (*s && ptr < json + size - 2) *ptr++ = *s++;
 		*ptr++ = '"';
 	}
-	
+
 	closedir(dir);
 	*ptr++ = ']';
 	*ptr = '\0';

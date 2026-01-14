@@ -269,8 +269,7 @@ static void aggregate_records(
 	}
 }
 
-
-static void touch_aggregate_filePath(
+static void touch_series_filePath(
 	char *file_path, uint32_t uuid, int year, int month, int day, int file_idx
 ) {
 	snprintf(file_path, FILE_PATH_LEN, SD_POINT"/log/%08lX/%02d/%02d%02d-%d.bin",
@@ -278,12 +277,14 @@ static void touch_aggregate_filePath(
 }
 
 
+//# NOTE: Use 2 digits year
 static int prepare_aggregate_file(
 	char *file_path, active_records_t *active,
 	uint32_t uuid, int year, int month, int day
 ) {
 	static const char method_name[] = "prepare_aggregate_file";
 	const int INVALID_INDEX = -1;
+	year = year % 1000;
 
 	//# Ensure year directory
 	if (active->curr_year != year) {
@@ -312,13 +313,13 @@ static int prepare_aggregate_file(
 
 	//# Ensure month and day directory - Note: day and month can change between runs
 	if (active->curr_month != month && active->curr_day != day) {
-		ESP_LOGI(TAG_SF, "%s UPDATE-PATH: for %d/%d/%d", method_name, year, month, day);
+		ESP_LOGI(TAG_SF, "%s UPDATE-PATH: for %02d/%02d/%02d", method_name, year, month, day);
 		int latest_file_idx = 0;
 
 		for (int i = 0; i < RECORD_MAX_FILE_COUNT; i++) {
 			struct stat st;
 			// find the first available file
-			touch_aggregate_filePath(file_path, uuid, year, month, day, i);
+			touch_series_filePath(file_path, uuid, year, month, day, i);
 
 			// stat ~6.5ms
 			if (stat(file_path, &st) != 0) break;	// File does not exist
@@ -347,7 +348,7 @@ static int prepare_aggregate_file(
 	// <uuid>/YY/MMDD-n.bin (max 6 hours - 360 records OR minutes)
 	// <uuid>/YY/MMDD-n+i.bin (Max 4 files per day - total 24 hours)
 	// max 1 minute a record: 10rec, 30rec, 60rec, 3hr=180rec, 6hr=360rec
-	touch_aggregate_filePath(file_path, uuid, year, month, day, active->file_index);
+	touch_series_filePath(file_path, uuid, year, month, day, active->file_index);
 	ESP_LOGI(TAG_SF, "%s PREPARING-FILE", method_name);
 	printf("- Start file: %s\n", file_path);
 
