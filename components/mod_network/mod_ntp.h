@@ -17,7 +17,7 @@ static int64_t base_uptime_us = 0;		// When base_time was set
 
 // Initialize with any time you want
 void time_init(time_t initial_time) {
-	base_time = initial_time - 5 * 60 * 60;			// TODO: Figure out the timezone issue
+	base_time = initial_time;
 	base_uptime_us = esp_timer_get_time();
 }
 

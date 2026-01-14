@@ -447,22 +447,22 @@ function indexDB_putReading(deviceId, timestamp, temp, hum, lux) {
 		console.error('Database not ready');
 		return;
 	}
-	
+
 	const reading = {
 		timestamp: timestamp,
 		temp: temp,
 		hum: hum,
 		lux: lux
 	};
-	
+
 	const tx = indexDB.transaction([deviceId], 'readwrite');
 	const store = tx.objectStore(deviceId);
 	const request = store.put(reading);			// ceate or overwrite
-	
+
 	request.onsuccess = function() {
 		// console.log('Data saved with timestamp:', reading.timestamp);
 	};
-	
+
 	request.onerror = function(e) {
 		console.error('Error saving:', e.target.error);
 	};
@@ -474,24 +474,24 @@ function indexDB_getReadings(deviceId, startTime, endTime) {
 		console.error('Database not ready');
 		return;
 	}
-	
+
 	const tx = indexDB.transaction([deviceId], 'readonly');
 	const store = tx.objectStore(deviceId);
-	
+
 	// Create time range (timestamp is the key)
 	const range = IDBKeyRange.bound(startTime, endTime);
 	const request = store.getAll(range);
-	
+
 	request.onsuccess = function(e) {
 		const readings = e.target.result;
 		console.log(`Found ${readings.length} readings`);
-		
+
 		// Do something with data
 		// readings.forEach(r => {
 		// 	console.log(`${new Date(r.timestamp).toLocaleTimeString()}: ${r.temp}°C`);
 		// });
 	};
-	
+
 	request.onerror = function(e) {
 		console.error('Error reading:', e.target.error);
 	};

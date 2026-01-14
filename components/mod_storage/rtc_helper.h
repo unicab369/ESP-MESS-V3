@@ -2,6 +2,8 @@
 // Copyright (c) 2025 UniTheCat
 #include <string.h>
 
+#define TIME_OFFSET 5*60*60
+
 #define SECONDS_PER_MINUTE 60
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
@@ -82,7 +84,9 @@ int RTC_get_seconds(
 // * @param year_base: Base year to start from use 1970 for epoch
 // * @return Date
 
-rtc_date_t RTC_get_date(int total_seconds, int year_base) {
+rtc_date_t RTC_get_date(int total_seconds, int year_base, int timeOffset) {
+	total_seconds -= timeOffset;
+
 	rtc_date_t output = {
 		.year = year_base,
 		.month = 1,
@@ -122,7 +126,8 @@ rtc_date_t RTC_get_date(int total_seconds, int year_base) {
 // * @param ms: additional milliseconds
 // * @return Time
 
-rtc_time_t RTC_get_time(int total_seconds, int ms) {
+rtc_time_t RTC_get_time(int total_seconds, int ms, int timeOffset) {
+	total_seconds -= timeOffset;
 	int minutes = total_seconds / 60;
 
 	return (rtc_time_t) {
@@ -171,8 +176,10 @@ int RTC_get_dateStr(char *str, rtc_date_t date, char separator, int full_year) {
 	return full_year ? 10 : 8;		// YYYY-MM-DD = 10, YYYYMMDD = 8
 }
 
-int RTC_get_dateStr_fromEpoch(char *str, int total_seconds, char separator, int full_year) {
-	rtc_date_t date = RTC_get_date(total_seconds, 1970);
+int RTC_dateStr_fromEpoch(
+	char *str, int total_seconds, char separator, int full_year, int timeOffset
+) {
+	rtc_date_t date = RTC_get_date(total_seconds, 1970, timeOffset);
 	return RTC_get_dateStr(str, date, separator, full_year);
 }
 
@@ -206,17 +213,17 @@ int RTC_get_timeStr(char *str, rtc_time_t time, char separator) {
 	return separator ? 8 : 6;  // HH:MM:SS = 8, HHMMSS = 6
 }
 
-int RTC_get_timeStr_fromEpoch(char *str, int total_seconds, char separator) {
-	rtc_time_t time = RTC_get_time(total_seconds, 0);
+int RTC_timeStr_fromEpoch(char *str, int total_seconds, char separator, int timeOffset) {
+	rtc_time_t time = RTC_get_time(total_seconds, 0, timeOffset);
 	return RTC_get_timeStr(str, time, separator);
 }
 
 
 // @ note: minimum 20 characters for safety
 
-int RTC_get_datetimeStr_fromEpoch(char *str, int total_seconds) {
-	int date_len = RTC_get_dateStr_fromEpoch(str, total_seconds, '/', 0);
+int RTC_datetimeStr_fromEpoch(char *str, int total_seconds, int timeOffset) {
+	int date_len = RTC_dateStr_fromEpoch(str, total_seconds, '/', 0, timeOffset);
 	str[date_len] = ' ';
-	int time_len = RTC_get_timeStr_fromEpoch(str + date_len + 1, total_seconds, ':');
+	int time_len = RTC_timeStr_fromEpoch(str + date_len + 1, total_seconds, ':', timeOffset);
 	return date_len + time_len + 1;
 }

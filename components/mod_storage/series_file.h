@@ -1,7 +1,6 @@
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
-#include "rtc_helper.h"
 
 #define RECORD_FILE_BLOCK_SIZE 4096
 #define HEADER_MAGIC 0xCACABABE // File identifier
@@ -246,8 +245,8 @@ int series_file_read_latest(
 	}
 
 	char last_ts[20], input_ts[20];
-	RTC_get_datetimeStr_fromEpoch(last_ts, header.last_timestamp);
-	RTC_get_datetimeStr_fromEpoch(input_ts, timestamp);
+	RTC_datetimeStr_fromEpoch(last_ts, header.last_timestamp, TIME_OFFSET);
+	RTC_datetimeStr_fromEpoch(input_ts, timestamp, TIME_OFFSET);
 
 	//# Check if the header latest timestamp is smaller than the input
 	if (header.last_timestamp < timestamp) {

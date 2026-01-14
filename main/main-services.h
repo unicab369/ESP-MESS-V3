@@ -709,10 +709,10 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 				char end_time[20];
 				ESP_LOGE(TAG_HTTP, "%s GENERATE-RECORD", method_name);
 
-				RTC_get_datetimeStr_fromEpoch(start_time, timestamp);
+				RTC_datetimeStr_fromEpoch(start_time, timestamp, TIME_OFFSET);
 				printf("- For timestamp: %s\n", start_time);
 
-				rtc_date_t date = RTC_get_date(timestamp, 1970);
+				rtc_date_t date = RTC_get_date(timestamp, 1970, TIME_OFFSET);
 				static record_t recs_to_write[WRITING_RECORDS_COUNT] = {0};
 
 				char file_path[FILE_PATH_LEN];
@@ -752,8 +752,8 @@ esp_err_t HTTP_UPDATE_ENTRY_HANDLER(httpd_req_t *req) {
 					latest_tstamp = ref_timestamp;
 				}
 
-				RTC_get_datetimeStr_fromEpoch(start_time, earliest_tstamp);
-				RTC_get_datetimeStr_fromEpoch(end_time, latest_tstamp);
+				RTC_datetimeStr_fromEpoch(start_time, earliest_tstamp, TIME_OFFSET);
+				RTC_datetimeStr_fromEpoch(end_time, latest_tstamp, TIME_OFFSET);
 				printf("- Generated Range: %s -> %s\n", start_time, end_time);
 			}
 		}

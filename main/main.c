@@ -12,6 +12,7 @@ int random_int(int min, int max) {
 	return min + rand() % (max - min + 1);
 }
 
+#include "rtc_helper.h"
 #include "main-services.h"
 
 #define MAIN_TASK_INTERVAL_US 2 * 1000000	// 2 seconds
@@ -164,19 +165,19 @@ void app_main(void) {
 
 		//# Interval check
 		if (now_us - last_timestamp_us >= MAIN_TASK_INTERVAL_US) {
-			uint32_t now = (uint32_t)time_now();
-			rtc_date_t date = RTC_get_date(now, 1970);
-			rtc_time_t time = RTC_get_time(now, 0);
+			time_t now = time_now();
+			rtc_date_t date = RTC_get_date(now, 1970, TIME_OFFSET);
+			rtc_time_t time = RTC_get_time(now, 0, TIME_OFFSET);
+			char datetime_str[20] = {0};
 
 			if (date.year > 2020) {
 				uint32_t uuid = 0xAABBCCDA;
+				RTC_datetimeStr_fromEpoch(datetime_str, now, TIME_OFFSET);
+				ESP_LOGI(TAG, "DATE-TIME: %s", datetime_str);
 
 				for (int i=0; i<10; i++) {
 					record_t record = {
-						.timestamp = now,  // Fixed timestamp
-						// .value1 = 10,
-						// .value2 = 20,
-						// .value3 = 30
+						.timestamp = now,
 						.value1 = random_int(20, 50),
 						.value2 = random_int(40, 80),
 						.value3 = random_int(0, 100),
@@ -185,14 +186,6 @@ void app_main(void) {
 					uuid += i;
 					cache_device(uuid, now);
 					cache_n_write_record(uuid, &record, date.year, date.month, date.day);
-
-					//# Take mutex
-					// if (xSemaphoreTake(FS_MUTEX, pdMS_TO_TICKS(50)) == pdTRUE) {
-					// 	rotationLog_write(uuid, now, &timeinfo, &record);
-					// 	xSemaphoreGive(FS_MUTEX);  //# Release mutex
-					// } else {
-					// 	ESP_LOGW(TAG_SF, "SD card busy, skipping log write");
-					// }
 				}
 			}
 
