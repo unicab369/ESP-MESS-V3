@@ -455,6 +455,7 @@ static void cache_n_write_record(
 	//# First time: reference for the 5 minute update time
 	if (active->last_aggregate_sec == 0) {
 		active->last_aggregate_sec = timestamp;
+		ESP_LOGE(TAG_SF, "%s PRELOADING-CACHE", method_name);
 
 		//! load cache here
 		validate = prepare_aggregate_file(file_path, active, uuid, year, month, day);

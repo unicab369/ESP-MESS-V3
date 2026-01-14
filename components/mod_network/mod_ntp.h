@@ -17,7 +17,7 @@ static int64_t base_uptime_us = 0;		// When base_time was set
 
 // Initialize with any time you want
 void time_init(time_t initial_time) {
-	base_time = initial_time;
+	base_time = initial_time - 5 * 60 * 60;			// TODO: Figure out the timezone issue
 	base_uptime_us = esp_timer_get_time();
 }
 
@@ -39,10 +39,21 @@ bool ntp_wait_sync(void) {
 	return esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) == ESP_OK;
 }
 
+// "UTC-5",    // Should be UTC+5
+// "UTC+5",    // Should be UTC-5
+// "UTC0",     // UTC
+// "EST5EDT",  // UTC-5 (Eastern)
+// "CST6CDT",  // UTC-6 (Central)
+// "MST7MDT",  // UTC-7 (Mountain)
+// "PST8PDT",  // UTC-8 (Pacific)
+// "GMT0",     // GMT
+// "UTC+05:00", // Try with colon
+
 void ntp_load_time(void) {
 	// Set timezone once (EST)
-	// setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+	// setenv("TZ", "America/Indiana/Indianapolis", 1);
 	setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
+	// setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0/2", 1);
 	tzset();
 
 	time_t ntp_now;

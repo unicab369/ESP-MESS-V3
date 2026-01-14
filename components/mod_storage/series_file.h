@@ -139,7 +139,10 @@ int series_batch_insert(
 	if (current_header.start_timestamp == 0) {
 		current_header.start_timestamp = output_header->last_timestamp;
 	}
-	current_header.last_timestamp = output_header->last_timestamp;
+
+	// Assuming timestamp is first 4 bytes of each element
+	const uint8_t* ptr = (const uint8_t*)series;
+	current_header.last_timestamp = *(const uint32_t*)ptr + (series_size * (count - 1));
 
 	//# Update headers
 	size_t actual_bytes = written * series_size;

@@ -166,6 +166,7 @@ void app_main(void) {
 		if (now_us - last_timestamp_us >= MAIN_TASK_INTERVAL_US) {
 			uint32_t now = (uint32_t)time_now();
 			rtc_date_t date = RTC_get_date(now, 1970);
+			rtc_time_t time = RTC_get_time(now, 0);
 
 			if (date.year > 2020) {
 				uint32_t uuid = 0xAABBCCDA;
